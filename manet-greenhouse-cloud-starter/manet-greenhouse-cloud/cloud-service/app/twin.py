@@ -1,15 +1,14 @@
 """
-Digital-Twin validation layer (Should-have - Master Plan Section 1.1, Week 6-7).
+Digital-Twin validation layer (Should-have — Week 6-7).
 
-Hien tai la stub: predict_effect() tra ve gia tri placeholder, luon coi
-la "khong te hon" de khong chan nham truoc khi co model that.
+Hiện tại là stub: predict_effect() trả giá trị placeholder, luôn coi
+là "không tệ hơn" để không chặn nhầm trước khi có model thật.
 
-TODO (Owner B, Week 6-7): huan luyen 1 model hoi quy nhe (vi du sklearn
-LinearRegression hoac DecisionTreeRegressor) tu du lieu bang `metrics`
-da thu thap o Week 6 (xem app/db.py), du doan PDR/delay tu (telemetry
-hien tai + trong so ung vien), dung de quyet dinh twin_rejected trong
-main.py::optimize(). Day chinh la co che kiem chung cho RQ6/H6 va
-Kich ban S4 mo rong trong ieee-paper-draft.md.
+TODO (Owner B, Week 6-7): huấn luyện model hồi quy nhẹ (sklearn
+LinearRegression hoặc DecisionTreeRegressor) từ dữ liệu bảng `metrics`
+đã thu thập ở Week 6 (xem app/db.py), dự đoán PDR/delay từ
+(telemetry hiện tại + trọng số ứng viên), dùng để quyết định
+twin_rejected trong main.py::optimize().
 """
 from dataclasses import dataclass
 
@@ -26,7 +25,7 @@ class TwinPrediction:
 def predict_effect(
     telemetry: TelemetrySnapshot, candidate_weights: dict
 ) -> TwinPrediction:
-    """Placeholder - chua huan luyen model that."""
+    """Placeholder — chưa huấn luyện model thật (Week 6-7)."""
     del telemetry, candidate_weights
     return TwinPrediction(
         predicted_pdr=1.0, predicted_delay_ms=0.0, worse_than_current=False

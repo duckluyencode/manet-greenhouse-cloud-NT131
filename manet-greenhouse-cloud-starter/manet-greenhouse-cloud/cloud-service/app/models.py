@@ -1,11 +1,11 @@
-"""Pydantic request/response models cho Cloud-Service."""
+"""Pydantic request/response models cho CAAR Cloud Service."""
 from typing import Dict, Optional
 
 from pydantic import BaseModel
 
 
 class TelemetrySnapshot(BaseModel):
-    """Du lieu telemetry ma Gateway gui len tu MANET."""
+    """Dữ liệu telemetry mà Gateway gửi lên từ MANET."""
 
     node_id: str
     rssi_avg: float

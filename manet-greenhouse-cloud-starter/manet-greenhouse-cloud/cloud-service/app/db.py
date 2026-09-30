@@ -1,10 +1,10 @@
 """
-SQLite schema - xem Master Plan Section 12.2.
+SQLite schema cho CAAR Cloud Service.
 
-Bang:
-- runs          : metadata moi lan chay mo phong (config_type, scenario, seed...)
-- metrics        : ket qua do luong cua 1 run (PDR, delay, overhead, energy...)
-- cloud_events   : log su kien tren kenh cloud (param_update, outage, twin_rejected...)
+Bảng:
+- runs          : metadata mỗi lần chạy mô phỏng (config_type, scenario, seed...)
+- metrics       : kết quả đo lường của 1 run (PDR, delay, overhead, energy...)
+- cloud_events  : log sự kiện trên kênh cloud (param_update, outage, twin_rejected...)
 """
 import sqlite3
 from pathlib import Path
