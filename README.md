@@ -19,36 +19,29 @@ Mạng tùy biến di động (MANET) trong nhà kính phải đối mặt với
 
 ## Kiến trúc hệ thống
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      CLOUD LAYER                        │
-│  ┌──────────────────┐      ┌────────────────────────┐   │
-│  │  Cloud Service   │◄────►│   Digital-Twin (stub)  │   │
-│  │  (FastAPI)       │      │   sklearn regression   │   │
-│  │  /optimize       │      └────────────────────────┘   │
-│  │  /detect         │                                    │
-│  │  /health         │      ┌────────────────────────┐   │
-│  └────────┬─────────┘      │      SQLite DB         │   │
-│           │                │  runs / metrics /      │   │
-└───────────┼────────────────│  cloud_events          │───┘
-            │  param_update  └────────────────────────┘
-            ▼
-┌─────────────────────────────────────────────────────────┐
-│                      EDGE LAYER                         │
-│                                                         │
-│   [Gateway Node]──────[MANET Node A]──[MANET Node B]   │
-│        │              (AODV + weights)  (AODV + weights)│
-│        │                    │                           │
-│   graceful                  └── row-constrained         │
-│   degradation                   mobility model          │
-│   (fallback to                                          │
-│    cached params)                                       │
-└─────────────────────────────────────────────────────────┘
-            ▲
-            │ NS-3 Simulation
-┌───────────┴─────────────────────────────────────────────┐
-│  simulation/   row-constrained mobility + channel model  │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph CLOUD["CLOUD LAYER"]
+        CS["Cloud Service (FastAPI)<br/>/optimize · /detect · /health"]
+        DT["Digital-Twin (stub)<br/>sklearn regression"]
+        DB[("SQLite DB<br/>runs / metrics / cloud_events")]
+        CS <--> DT
+        CS --- DB
+    end
+
+    subgraph EDGE["EDGE LAYER"]
+        GW["Gateway Node<br/>(graceful degradation<br/>→ fallback cached params)"]
+        NA["MANET Node A<br/>(AODV + weights)"]
+        NB["MANET Node B<br/>(AODV + weights)"]
+        GW --- NA --- NB
+    end
+
+    subgraph SIM["SIMULATION LAYER"]
+        NS["simulation/<br/>row-constrained mobility + channel model (NS-3)"]
+    end
+
+    CS -->|param_update| GW
+    NS -->|feeds| EDGE
 ```
 
 ---
