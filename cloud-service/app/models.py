@@ -1,5 +1,4 @@
 """Pydantic request/response models cho CAAR Cloud Service."""
-from typing import Dict, Optional
 
 from pydantic import BaseModel
 
@@ -11,14 +10,14 @@ class TelemetrySnapshot(BaseModel):
     rssi_avg: float
     energy_remaining_pct: float
     hop_count: int
-    last_known_weights: Optional[Dict[str, float]] = None
+    last_known_weights: dict[str, float] | None = None
 
 
 class OptimizeResponse(BaseModel):
-    weights: Dict[str, float]
+    weights: dict[str, float]
     twin_rejected: bool = False
 
 
 class DetectResponse(BaseModel):
     anomaly: bool
-    reason: Optional[str] = None
+    reason: str | None = None

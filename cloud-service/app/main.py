@@ -12,7 +12,6 @@ from fastapi import FastAPI
 
 from app.db import init_db
 from app.models import DetectResponse, OptimizeResponse, TelemetrySnapshot
-from app.twin import predict_effect
 
 app = FastAPI(title="CAAR Cloud-Service", version="0.1.0")
 

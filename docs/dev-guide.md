@@ -16,7 +16,7 @@
 
 ```bash
 git clone https://github.com/duckluyencode/manet-greenhouse-cloud-NT131.git
-cd manet-greenhouse-cloud-NT131/manet-greenhouse-cloud-starter/manet-greenhouse-cloud
+cd manet-greenhouse-cloud-NT131
 
 # Tạo virtual environment
 python -m venv .venv
