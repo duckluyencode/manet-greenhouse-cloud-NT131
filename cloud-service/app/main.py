@@ -1,14 +1,9 @@
-"""
-Endpoints:
-- GET  /health    : kiểm tra service còn sống
-- POST /optimize  : nhận telemetry, trả về trọng số định tuyến mới 
-- POST /detect    : nhận telemetry, trả cảnh báo bất thường 
-"""
 import threading
 import time
+from contextlib import asynccontextmanager
+from typing import TypedDict
 
-from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
 from app.db import init_db
 from app.models import DetectResponse, OptimizeResponse, TelemetrySnapshot
