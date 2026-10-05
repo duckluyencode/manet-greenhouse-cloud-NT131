@@ -12,7 +12,7 @@ twin_rejected trong main.py::optimize().
 """
 from dataclasses import dataclass
 
-from app.models import TelemetrySnapshot
+from .models import TelemetrySnapshot
 
 
 # Gom các chỉ số dự đoán và quyết định của Digital Twin vào một kiểu dữ liệu.

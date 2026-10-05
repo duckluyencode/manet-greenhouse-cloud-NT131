@@ -1,14 +1,26 @@
 import threading
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TypedDict
 
 from fastapi import FastAPI, HTTPException
 
-from app.db import init_db
-from app.models import DetectResponse, OptimizeResponse, TelemetrySnapshot
+from .db import init_db
+from .models import DetectResponse, OptimizeResponse, TelemetrySnapshot
 
-app = FastAPI(title="CAAR Cloud-Service", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Khởi tạo database khi service bắt đầu."""
+    init_db()
+    yield
+
+
+app = FastAPI(
+    title="CAAR Cloud-Service",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 # Các ngưỡng này giới hạn tuổi request và mức lệch timestamp cho phép.
 MAX_AGE_SECONDS = 15
@@ -67,12 +79,6 @@ def validate_freshness(telemetry: TelemetrySnapshot) -> None:
         SEEN_NONCES[telemetry.nonce] = (
             telemetry.timestamp + MAX_AGE_SECONDS
         )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    """Khởi tạo schema SQLite khi service bắt đầu."""
-    init_db()
 
 
 @app.get("/health")
