@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from app.models import TelemetrySnapshot
 
 
+# Gom các chỉ số dự đoán và quyết định của Digital Twin vào một kiểu dữ liệu.
 @dataclass
 class TwinPrediction:
     predicted_pdr: float
@@ -25,7 +26,7 @@ class TwinPrediction:
 def predict_effect(
     telemetry: TelemetrySnapshot, candidate_weights: dict
 ) -> TwinPrediction:
-    """Placeholder — chưa huấn luyện model thật (Week 6-7)."""
+    """Dự đoán ảnh hưởng của trọng số; hiện trả kết quả placeholder."""
     del telemetry, candidate_weights
     return TwinPrediction(
         predicted_pdr=1.0, predicted_delay_ms=0.0, worse_than_current=False

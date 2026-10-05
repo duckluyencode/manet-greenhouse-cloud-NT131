@@ -1,39 +1,101 @@
 """
-Cloud Service — bộ tối ưu hóa định tuyến cho kiến trúc CAAR (Cloud-Assisted Adaptive Routing).
-
 Endpoints:
 - GET  /health    : kiểm tra service còn sống
-- POST /optimize  : nhận telemetry, trả về trọng số định tuyến mới (nhánh a - Must-have)
-- POST /detect    : nhận telemetry, trả cảnh báo bất thường (nhánh b - Should-have)
-
-Owner: B (Cloud/Backend Lead)
+- POST /optimize  : nhận telemetry, trả về trọng số định tuyến mới 
+- POST /detect    : nhận telemetry, trả cảnh báo bất thường 
 """
+import threading
+import time
+
 from fastapi import FastAPI
+from fastapi import HTTPException
 
 from app.db import init_db
 from app.models import DetectResponse, OptimizeResponse, TelemetrySnapshot
 
 app = FastAPI(title="CAAR Cloud-Service", version="0.1.0")
 
+# Các ngưỡng này giới hạn tuổi request và mức lệch timestamp cho phép.
+MAX_AGE_SECONDS = 15
+MAX_FUTURE_SKEW_SECONDS = 5
+# Giới hạn cache nonce để tránh dùng hết bộ nhớ khi nhận quá nhiều request.
+MAX_SEEN_NONCES = 100_000
+# Tần suất quét nonce hết hạn trong bộ nhớ.
+NONCE_CLEANUP_INTERVAL_SECONDS = 5
+
+# Cache nonce trong tiến trình hiện tại; triển khai nhiều worker cần kho dùng chung.
+SEEN_NONCES: dict[str, float] = {}
+# Khóa đảm bảo thao tác kiểm tra và ghi nonce không bị race trong cùng tiến trình.
+_NONCE_LOCK = threading.Lock()
+# Mốc thời gian lần gần nhất đã dọn nonce hết hạn.
+_last_nonce_cleanup = 0.0
+
+
+def validate_freshness(telemetry: TelemetrySnapshot) -> None:
+    """Từ chối telemetry cũ/lệch tương lai và chỉ chấp nhận mỗi nonce một lần."""
+    global _last_nonce_cleanup
+
+    now = time.time()
+    age = now - telemetry.timestamp
+    if age > MAX_AGE_SECONDS or age < -MAX_FUTURE_SKEW_SECONDS:
+        raise HTTPException(
+            status_code=400,
+            detail="Request timestamp is outside the allowed time window",
+        )
+
+    with _NONCE_LOCK:
+        if now - _last_nonce_cleanup >= NONCE_CLEANUP_INTERVAL_SECONDS:
+            expired_nonces = [
+                nonce for nonce, expires_at in SEEN_NONCES.items()
+                if expires_at < now
+            ]
+            for nonce in expired_nonces:
+                del SEEN_NONCES[nonce]
+            _last_nonce_cleanup = now
+
+        expires_at = SEEN_NONCES.get(telemetry.nonce)
+        if expires_at is not None and expires_at >= now:
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate nonce replay detected",
+            )
+        if expires_at is not None:
+            del SEEN_NONCES[telemetry.nonce]
+
+        if len(SEEN_NONCES) >= MAX_SEEN_NONCES:
+            raise HTTPException(
+                status_code=503,
+                detail="Replay protection is temporarily at capacity",
+            )
+
+        # Keep each nonce until its timestamp can no longer pass freshness checks.
+        SEEN_NONCES[telemetry.nonce] = (
+            telemetry.timestamp + MAX_AGE_SECONDS
+        )
+
 
 @app.on_event("startup")
 def on_startup() -> None:
+    """Khởi tạo schema SQLite khi service bắt đầu."""
     init_db()
 
 
 @app.get("/health")
 def health() -> dict:
+    """Endpoint kiểm tra service đang hoạt động."""
     return {"status": "ok"}
 
 
 @app.post("/optimize", response_model=OptimizeResponse)
 def optimize(telemetry: TelemetrySnapshot) -> OptimizeResponse:
     """
-    Nhánh (a) — tối ưu hiệu năng (Must-have).
+    Nhánh (a) — tối ưu hiệu năng 
 
     TODO (Week 3-4, Owner B): thay công thức placeholder bằng
     weighted heuristic thật (RSSI + hop-count + năng lượng còn lại).
     """
+    # Kiểm tra freshness trước khi tính toán hoặc trả kết quả.
+    validate_freshness(telemetry)
     candidate_weights = _compute_candidate_weights(telemetry)
 
     # TODO (Week 6-7, Owner B, Should-have):
@@ -56,5 +118,6 @@ def _compute_candidate_weights(telemetry: TelemetrySnapshot) -> dict:
 @app.post("/detect", response_model=DetectResponse)
 def detect(telemetry: TelemetrySnapshot) -> DetectResponse:
     """Nhánh (b) — phát hiện bất thường (Should-have). TODO Week 6 nếu còn thời gian."""
-    del telemetry
+    # Endpoint detect dùng chung cơ chế chống request cũ và request bị phát lại.
+    validate_freshness(telemetry)
     return DetectResponse(anomaly=False, reason=None)

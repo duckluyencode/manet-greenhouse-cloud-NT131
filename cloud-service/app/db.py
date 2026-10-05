@@ -10,14 +10,17 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+# Đường dẫn file SQLite mặc định của Cloud Service.
 DB_PATH = Path(__file__).resolve().parent.parent / "results.db"
 
 
 def get_conn() -> sqlite3.Connection:
+    """Mở kết nối SQLite tới cơ sở dữ liệu của service."""
     return sqlite3.connect(DB_PATH)
 
 
 def init_db() -> None:
+    """Tạo các bảng lưu kết quả mô phỏng và sự kiện nếu chưa tồn tại."""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
@@ -73,6 +76,7 @@ def save_run(
     node_count: int,
     mobility_speed: float,
 ) -> int:
+    """Lưu metadata của một lần chạy và trả về ID được SQLite tạo."""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
@@ -88,6 +92,7 @@ def save_run(
 
 
 def save_metrics(run_id: int, **metrics: Any) -> None:
+    """Lưu các chỉ số đo được gắn với một lần chạy."""
     conn = get_conn()
     cols = ", ".join(metrics.keys())
     placeholders = ", ".join(["?"] * len(metrics))
@@ -100,6 +105,7 @@ def save_metrics(run_id: int, **metrics: Any) -> None:
 
 
 def save_cloud_event(run_id: int, event_type: str, payload: str = "") -> None:
+    """Lưu một sự kiện phát sinh trong quá trình service hoạt động."""
     conn = get_conn()
     conn.execute(
         "INSERT INTO cloud_events (run_id, event_type, payload) VALUES (?, ?, ?)",
