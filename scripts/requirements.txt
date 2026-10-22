@@ -1,0 +1,3 @@
+# Script phân tích dùng chung app/ của cloud-service (import_ns3_results.py).
+-r ../cloud-service/requirements.txt
+matplotlib==3.9.2
