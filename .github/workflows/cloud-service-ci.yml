@@ -38,3 +38,37 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
+
+  logic:
+    name: Parity C++ & scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: >-
+            scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt ruff
+
+      - name: parity_cases.json is up to date
+        run: |
+          python scripts/gen_parity_cases.py
+          git diff --exit-code contracts/parity_cases.json
+
+      - name: Parity test (g++)
+        working-directory: simulation/caar-logic
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -o test_caar_logic test_caar_logic.cpp
+          ./test_caar_logic ../../contracts/parity_cases.json
+
+      - name: Lint scripts
+        run: ruff check scripts/
+
+      - name: Test scripts
+        run: pytest scripts/tests -v --tb=short
