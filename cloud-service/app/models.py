@@ -14,8 +14,8 @@ class TelemetrySnapshot(BaseModel):
     hop_count: int
     last_known_weights: dict[str, float] | None = None
 
-    timestamp: float = Field(allow_inf_nan=False) #cho biết request được tạo lúc nào 
-    nonce: str = Field(min_length=1, max_length=128) #mã dùng một lần cho mỗi request, để tránh replay attack
+    timestamp: float = Field(allow_inf_nan=False)  # cho biết request được tạo lúc nào
+    nonce: str = Field(min_length=1, max_length=128)  # mã dùng một lần cho mỗi request, để tránh replay attack
 
 
 # Schema phản hồi chứa trọng số định tuyến và kết quả kiểm tra Digital Twin.
