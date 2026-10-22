@@ -1,37 +1,56 @@
 # API Reference — CAAR Cloud Service
 
-Base URL: `http://localhost:8000` (development)
+Base URL: `http://localhost:8000` (dev) · `https://<tên-miền>` (EC2, sau Caddy)
 
-Swagger UI: `http://localhost:8000/docs`  
-ReDoc: `http://localhost:8000/redoc`
+Swagger UI: `/docs` (nút **Authorize** để nhập `X-API-Key`) · ReDoc: `/redoc`
+
+Đặc tả gốc: tài liệu đồ án mục 7.2 (heuristic), 8 (bảo mật), 9.2–9.3 (API, model).
+
+---
+
+## Xác thực và độ mới
+
+| Kiểm tra | Cách làm | Lỗi |
+|---|---|---|
+| API key | Header `X-API-Key` phải bằng biến môi trường `CAAR_API_KEY` của server | `401` sai/thiếu key; `503` server chưa cấu hình key |
+| Timestamp | `abs(now - timestamp) <= 30 s` | `400` |
+| Nonce (tùy chọn) | Mỗi nonce dùng một lần trong cửa sổ 30 s | `400` khi gửi lại |
+| Miền giá trị | Pydantic, bảng dưới | `422` |
+
+`/health` không cần key. `/optimize` và `/metrics/summary` cần key.
 
 ---
 
 ## Schemas
 
-### TelemetrySnapshot (Request)
+### NodeTelemetry
 
-```json
-{
-  "node_id": "string",
-  "rssi_avg": "float",
-  "energy_remaining_pct": "float (0–100)",
-  "hop_count": "integer",
-  "last_known_weights": {
-    "rssi_weight": "float",
-    "energy_weight": "float",
-    "hop_weight": "float"
-  }
-}
-```
+| Field | Kiểu | Ràng buộc |
+|---|---|---|
+| `node_id` | string | Bắt buộc là chuỗi (ví dụ `"r1"`); gửi số → 422 |
+| `rssi_avg` | float (dBm) | `[-120; 0]` |
+| `energy_remaining_pct` | float | `[0; 100]` |
+| `hop_count` | int | `>= 1` |
 
-| Field | Type | Bắt buộc | Mô tả |
-|-------|------|----------|-------|
-| `node_id` | string | ✅ | ID của node MANET (ví dụ `"node-1"`) |
-| `rssi_avg` | float | ✅ | RSSI trung bình (dBm, thường âm, ví dụ `-65.0`) |
-| `energy_remaining_pct` | float | ✅ | Phần trăm năng lượng còn lại (0–100) |
-| `hop_count` | int | ✅ | Số hop hiện tại tới Gateway |
-| `last_known_weights` | object | ❌ | Weights đã cache; dùng cho graceful degradation |
+### NetworkSnapshot (request của `/optimize`)
+
+| Field | Kiểu | Ràng buộc |
+|---|---|---|
+| `run_id` | int | ID run (0 khi đo trace) |
+| `timestamp` | float | Unix time hiện tại, lệch ≤ 30 s |
+| `nonce` | string \| null | Tùy chọn, 1–128 ký tự |
+| `nodes` | list[NodeTelemetry] | Ít nhất 1 node |
+
+### Weights
+
+`hop_weight`, `rssi_weight`, `energy_weight`: mỗi giá trị ≥ 0, tổng = 1 (sai số 0,001).
+
+### OptimizeResponse
+
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `weights` | Weights | Bộ trọng số Gateway phát cho mọi robot |
+| `rule` | `low_battery` \| `poor_signal` \| `balanced` | Luật heuristic đã chọn |
 
 ---
 
@@ -39,107 +58,55 @@ ReDoc: `http://localhost:8000/redoc`
 
 ### GET /health
 
-Kiểm tra service còn sống.
-
-**Response 200**
-
-```json
-{ "status": "ok" }
-```
-
-**Ví dụ**
-
 ```bash
 curl http://localhost:8000/health
+# {"status":"ok"}
 ```
-
----
 
 ### POST /optimize
 
-Nhận telemetry snapshot từ Gateway, trả về bộ trọng số định tuyến mới.
+Chọn trọng số theo luật đúng đầu tiên (mục 7.2):
 
-- **Must-have (nhánh a)** — Week 3-4
-- Logic hiện tại: weighted heuristic placeholder (`rssi×0.5 + energy×0.3 + hop×0.2`)
-- Digital-Twin validation: stub (Week 6-7)
+| Điều kiện | w_h | w_r | w_e | rule |
+|---|---|---|---|---|
+| ≥ 30% robot có pin < 20% | 0,2 | 0,3 | 0,5 | `low_battery` |
+| Trung vị RSSI (kẹp [−90; −40] dBm) < −75 dBm | 0,3 | 0,5 | 0,2 | `poor_signal` |
+| Còn lại | 0,4 | 0,3 | 0,3 | `balanced` |
 
-**Request body:** `TelemetrySnapshot`
-
-**Response 200** — `OptimizeResponse`
-
-```json
-{
-  "weights": {
-    "rssi_weight": 0.5,
-    "energy_weight": 0.3,
-    "hop_weight": 0.2
-  },
-  "twin_rejected": false
-}
-```
-
-| Field | Type | Mô tả |
-|-------|------|-------|
-| `weights` | object | Bộ trọng số mới để cập nhật vào lõi AODV |
-| `twin_rejected` | bool | `true` nếu Digital-Twin dự đoán weights mới sẽ làm giảm hiệu năng → Gateway nên dùng `last_known_weights` |
-
-**Ví dụ**
+Mỗi lần gọi thành công ghi một sự kiện `param_update` vào bảng `cloud_events`.
 
 ```bash
 curl -X POST http://localhost:8000/optimize \
   -H "Content-Type: application/json" \
-  -d '{
-    "node_id": "node-3",
-    "rssi_avg": -72.0,
-    "energy_remaining_pct": 45.0,
-    "hop_count": 4
-  }'
+  -H "X-API-Key: $CAAR_API_KEY" \
+  -d "{\"run_id\": 1, \"timestamp\": $(date +%s),
+       \"nodes\": [
+         {\"node_id\": \"r1\", \"rssi_avg\": -72, \"energy_remaining_pct\": 45, \"hop_count\": 2},
+         {\"node_id\": \"r2\", \"rssi_avg\": -85, \"energy_remaining_pct\": 12, \"hop_count\": 3}
+       ]}"
+# {"weights":{"hop_weight":0.2,"rssi_weight":0.3,"energy_weight":0.5},"rule":"low_battery"}
 ```
 
----
+### GET /metrics/summary
 
-### POST /detect
-
-Nhận telemetry snapshot, trả về cảnh báo bất thường.
-
-- **Should-have (nhánh b)** — Week 6 nếu còn thời gian
-- Logic hiện tại: stub, luôn trả `anomaly: false`
-
-**Request body:** `TelemetrySnapshot`
-
-**Response 200** — `DetectResponse`
+PDR và độ trễ trung bình theo cấu hình và kịch bản, từ các run đã nhập bằng
+`scripts/import_ns3_results.py`.
 
 ```json
-{
-  "anomaly": false,
-  "reason": null
-}
-```
-
-| Field | Type | Mô tả |
-|-------|------|-------|
-| `anomaly` | bool | `true` nếu phát hiện bất thường (năng lượng cạn đột ngột, RSSI drop, ...) |
-| `reason` | string \| null | Mô tả nguyên nhân nếu `anomaly: true` |
-
-**Ví dụ**
-
-```bash
-curl -X POST http://localhost:8000/detect \
-  -H "Content-Type: application/json" \
-  -d '{
-    "node_id": "node-5",
-    "rssi_avg": -85.0,
-    "energy_remaining_pct": 8.0,
-    "hop_count": 6
-  }'
+[
+  {"config_type": "no_cloud", "scenario": "baseline", "runs": 10,
+   "pdr_mean": 0.85, "avg_delay_ms_mean": 12.3}
+]
 ```
 
 ---
 
 ## Mã lỗi
 
-| HTTP Status | Mô tả |
-|-------------|-------|
+| HTTP | Khi nào |
+|---|---|
 | `200` | Thành công |
-| `422 Unprocessable Entity` | Request body không hợp lệ (thiếu field, sai kiểu) |
-| `500 Internal Server Error` | Lỗi server không mong đợi |
+| `400` | Timestamp lệch > 30 s hoặc nonce bị gửi lại |
+| `401` | Thiếu hoặc sai `X-API-Key` |
+| `422` | Body sai kiểu / ngoài miền giá trị / `nodes` rỗng |
+| `503` | Server chưa đặt `CAAR_API_KEY`, hoặc cache nonce đầy |

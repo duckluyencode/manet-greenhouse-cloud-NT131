@@ -7,7 +7,32 @@ Versioning theo kế hoạch: `v0.1-alpha` → `v0.3-beta` → `v0.6` → `v1.0-
 
 ## [Unreleased]
 
-### Added
+### Added — phần Owner B theo tài liệu đồ án bản cập nhật (20/10/2026)
+
+- `/optimize` nhận `NetworkSnapshot` và chạy heuristic toàn mạng (mục 7.2) trong `app/heuristic.py`;
+  so sánh ngưỡng trong miền số nguyên/dBm theo quy ước chốt 22/10
+- 4 model mục 9.3 với ràng buộc miền giá trị (`NodeTelemetry`, `NetworkSnapshot`, `Weights`, `OptimizeResponse`)
+- `app/security.py`: API key `X-API-Key` (fail closed), timestamp ±30 s, nonce tùy chọn
+- `GET /metrics/summary`; SQLite thêm `runs.params`, `metrics.route_discovery_ms`,
+  `metrics.min_energy_pct`, bảng `wan_trace`; DB cũ được bổ sung cột tự động
+- Test API theo bảng 14.2 và test parity Python ↔ `contracts/parity_cases.json`
+- `contracts/`: `parity_cases.json`, `channel.json`, `waypoints/` (N ∈ {6,10,16,20} × seed 1..10, biến thể 1 m/s)
+- `simulation/caar-logic/caar_logic.h`: heuristic, chi phí c_i, thời gian chờ D_max·c_i, phương án dự phòng 4.5,
+  máy trạng thái Gateway 3 mức + TTL; `test_caar_logic.cpp` đọc parity_cases.json (g++, không cần NS-3)
+- `scripts/`: `gen_parity_cases.py`, `gen_waypoints.py`, `fit_channel.py`, `wan_probe.py`, `run_batch.sh`,
+  `import_ns3_results.py`, `plot_results.py`, `caar_stats.py` (CI 95%, Welch t-test) + pytest
+- `deploy/`: Docker Compose FastAPI + Caddy (HTTPS Let's Encrypt); `cloud-service/Dockerfile`
+- CI: job `logic` (parity_cases.json khớp script, parity g++, lint + test scripts)
+
+### Removed
+
+- `app/twin.py`, `POST /detect` (cắt khỏi phạm vi, mục 16); `pandas`, `scikit-learn` khỏi requirements
+
+### Fixed
+
+- `.gitignore` bỏ dòng `scratch/` (đang bỏ qua `simulation/scratch/caar.cc`), cho phép `.env.example`
+
+### Added (trước đó)
 
 - Khởi tạo cấu trúc repo từ template
 - Cloud-service skeleton: `/health` (hoạt động), `/optimize` (logic placeholder), `/detect` (stub)

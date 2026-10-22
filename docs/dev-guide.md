@@ -8,7 +8,8 @@
 | pip | 24+ | `pip install --upgrade pip` |
 | Git | 2.40+ | |
 | Docker | 24+ | Tùy chọn, để chạy container |
-| NS-3 | 3.42 | Chỉ cần cho `simulation/` — xem `simulation/README.md` |
+| g++ | 9+ (C++17) | Parity test `simulation/caar-logic/` |
+| NS-3 | một tag cố định, ví dụ ns-3.48 | Chỉ Owner A — xem `simulation/README.md` |
 
 ---
 
@@ -75,69 +76,65 @@ ruff format cloud-service/
 
 ## 6. Cấu trúc database (SQLite)
 
-File DB tạo tự động tại `cloud-service/results.db` khi server khởi động.
-
-```
-runs          → metadata mỗi lần chạy mô phỏng
-metrics       → kết quả đo PDR, delay, overhead, energy
-cloud_events  → log sự kiện cloud (param_update, outage, twin_rejected)
-```
-
-Xem schema chi tiết tại [`app/db.py`](../cloud-service/app/db.py).
+File DB mặc định `cloud-service/results.db` (đổi bằng `CAAR_DB_PATH`). Bảng:
+`runs`, `metrics`, `cloud_events`, `wan_trace` — schema ở [`app/db.py`](../cloud-service/app/db.py),
+mô tả ở [`architecture.md`](architecture.md).
 
 ---
 
-## 7. Thêm logic thật vào `/optimize` (Week 3-4)
+## 7. Sửa heuristic
 
-Tìm hàm `_compute_candidate_weights()` trong [`app/main.py`](../cloud-service/app/main.py):
+1. Sửa [`app/heuristic.py`](../cloud-service/app/heuristic.py) (bản chuẩn) và thêm test vào `tests/`.
+2. Sửa [`caar_logic.h`](../simulation/caar-logic/caar_logic.h) cho khớp.
+3. Sinh lại test vector và chạy parity:
 
-```python
-def _compute_candidate_weights(telemetry: TelemetrySnapshot) -> dict:
-    # Thay placeholder bằng weighted heuristic thật:
-    # RSSI (normalize về 0-1) × w_rssi
-    # + energy_remaining_pct / 100 × w_energy
-    # + 1 / hop_count × w_hop
-    ...
+```bash
+python scripts/gen_parity_cases.py
+cd simulation/caar-logic
+g++ -std=c++17 -O2 -Wall -Wextra -o test_caar_logic test_caar_logic.cpp
+./test_caar_logic ../../contracts/parity_cases.json
 ```
 
-Sau khi thêm logic, chạy lại tests để đảm bảo response vẫn đúng schema.
+4. Báo Owner A vì `scratch/caar.cc` include file này. CI chặn nếu quên sinh lại `parity_cases.json`.
 
 ---
 
-## 8. Huấn luyện Digital-Twin (Week 6-7)
+## 8. Script của Owner B
 
-1. Chạy ≥ 50 lần mô phỏng NS-3, lưu kết quả vào `results.db`.
-2. Mở [`app/twin.py`](../cloud-service/app/twin.py) và thay `predict_effect()` bằng model thật:
+| Script | Việc |
+|---|---|
+| `gen_parity_cases.py` | Sinh `contracts/parity_cases.json` |
+| `gen_waypoints.py` | Sinh quỹ đạo robot `contracts/waypoints/` |
+| `fit_channel.py` | Tham số kênh `contracts/channel.json` |
+| `wan_probe.py` | Đo RTT/lỗi tới AWS |
+| `run_batch.sh` | Chạy hàng loạt NS-3 (`--dry-run` để xem lệnh) |
+| `import_ns3_results.py` | CSV → SQLite |
+| `plot_results.py` | Biểu đồ mean ± CI 95%, `hypotheses.md` |
 
-```python
-from sklearn.linear_model import LinearRegression
-# Đọc từ results.db, train model, lưu vào twin_model.joblib
+```bash
+pip install -r scripts/requirements.txt
+pytest scripts/tests
 ```
-
-3. Bỏ comment khối Digital-Twin trong `app/main.py::optimize()`.
 
 ---
 
 ## 9. Docker
 
 ```bash
-# Build image
 docker build -t caar-cloud ./cloud-service
-
-# Chạy container
-docker run -p 8000:8000 -v $(pwd)/cloud-service:/data caar-cloud
-
-# Kiểm tra health
+docker run -p 8000:8000 -e CAAR_API_KEY=dev-key caar-cloud
 curl http://localhost:8000/health
 ```
+
+Triển khai có HTTPS: `deploy/docker-compose.yml` (xem `user-guide.md`).
 
 ---
 
 ## 10. CI/CD
 
 GitHub Actions chạy tự động khi push lên mọi branch:
-- Lint bằng `ruff`
-- Chạy `pytest`
+- Job `test`: `ruff` + `pytest` cho `cloud-service/` (Python 3.11, 3.12)
+- Job `logic`: kiểm tra `parity_cases.json` khớp script, parity g++, `ruff` + `pytest` cho `scripts/`
 
 Xem workflow tại [`.github/workflows/cloud-service-ci.yml`](../.github/workflows/cloud-service-ci.yml) (đường dẫn từ repo root).
 
@@ -148,8 +145,8 @@ Xem workflow tại [`.github/workflows/cloud-service-ci.yml`](../.github/workflo
 Theo [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat(cloud): thêm weighted heuristic thật vào /optimize
+feat(cloud): network snapshot heuristic
 fix(db): sửa lỗi duplicate run_id khi chạy concurrent
-test(cloud): thêm test case optimize với energy thấp
-docs: cập nhật api-doc thêm ví dụ detect
+test(cloud): weights sum
+sim(ns3): delayed RREQ forwarding
 ```

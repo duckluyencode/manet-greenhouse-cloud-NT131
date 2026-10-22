@@ -1,131 +1,47 @@
 # Software Requirements Specification (SRS)
 
-**Dự án:** MANET Nhà Kính — CAAR  
-**Môn học:** NT131  
-**Nhóm:** 06  
-**Phiên bản:** 0.1
+**Dự án:** MANET Nhà Kính — CAAR · **Môn học:** NT131 · **Nhóm:** 06 · **Phiên bản:** 0.2 (theo tài liệu đồ án bản cập nhật 20/10/2026)
 
----
+## 1. Phạm vi
 
-## 1. Giới thiệu
+CAAR giữ AODV gọn nhẹ trên robot, đưa việc chọn trọng số định tuyến lên Cloud,
+và tự hạ cấp an toàn khi mất Cloud. Kiểm chứng bằng NS-3 với kênh truyền và quỹ
+đạo robot lấy từ số đo trong nhà kính thật.
 
-### 1.1 Mục đích
+**Ngoài phạm vi (mục 16):** Digital-Twin, endpoint `/detect`, kịch bản DoS trong mô phỏng,
+mô hình suy hao riêng cho kim loại và độ ẩm, bảo mật định tuyến giữa các robot (SAODV),
+phần cứng robot thật.
 
-Tài liệu này đặc tả yêu cầu phần mềm cho hệ thống Cloud-Assisted Adaptive Routing (CAAR), bao gồm Cloud Service (FastAPI), module mô phỏng NS-3, và cơ chế graceful degradation.
+## 2. Giả định
 
-### 1.2 Phạm vi
-
-Hệ thống CAAR bao gồm:
-- Cloud Service: nhận telemetry, tính toán trọng số định tuyến, phát hiện bất thường.
-- Module NS-3: mô phỏng mạng MANET trong nhà kính với row-constrained mobility.
-- Gateway: cầu nối MANET ↔ Cloud, xử lý graceful degradation.
-
-**Ngoài phạm vi:** Phần cứng robot thực tế, hệ thống điều khiển nhà kính, giao diện người dùng web.
-
----
-
-## 2. Mô tả tổng quan hệ thống
-
-### 2.1 Bối cảnh
-
-Mạng MANET trong nhà kính phải đối mặt với:
-- Suy hao tín hiệu do khung kim loại và tán lá
-- Nút di động (robot) chuyển động theo luống cây cố định
-- Ràng buộc năng lượng nghiêm ngặt
-
-### 2.2 Giả định
-
-- Mỗi nhà kính có đúng 1 Gateway kết nối cloud.
-- Robot di chuyển với tốc độ ≤ 1 m/s.
-- Kết nối cloud có độ trễ ≤ 200 ms trong điều kiện bình thường.
-- NS-3 được dùng cho mô phỏng; không dùng phần cứng thực tế trong đồ án này.
-
----
+- Mỗi nhà kính 100 × 50 m có đúng 1 Gateway ở giữa lối chính.
+- Robot chạy trên ray 0,2 m/s, dừng 15–24 s mỗi điểm làm việc (mục 6).
+- Kênh log-distance n ≈ 4,63, σ ≈ 5 dB (Cama-Pinto et al. 2019, mục 5).
+- Kênh Gateway–Cloud mô phỏng bằng trace đo thật TP.HCM → AWS ap-southeast-1.
 
 ## 3. Yêu cầu chức năng
 
-### FR-01: Endpoint /health
-
-**Mô tả:** Cloud Service phải cung cấp endpoint kiểm tra sức sống.  
-**Input:** GET request.  
-**Output:** `{"status": "ok"}` với HTTP 200.  
-**Ưu tiên:** Must-have.
-
-### FR-02: Endpoint /optimize — Tính trọng số định tuyến
-
-**Mô tả:** Nhận telemetry snapshot từ Gateway, trả về bộ trọng số định tuyến.  
-**Input:** `TelemetrySnapshot` (node_id, rssi_avg, energy_remaining_pct, hop_count).  
-**Output:** `OptimizeResponse` (weights, twin_rejected).  
-**Logic (Week 3-4):** Weighted heuristic: RSSI × 0.5 + energy × 0.3 + hop × 0.2 (placeholder → thay bằng công thức thật).  
-**Ưu tiên:** Must-have.
-
-### FR-03: Graceful Degradation
-
-**Mô tả:** Gateway phải tiếp tục hoạt động khi cloud không phản hồi.  
-**Điều kiện:** Timeout `/optimize` > ngưỡng cấu hình.  
-**Hành vi:** Dùng `last_known_weights` đã cache; nếu không có → dùng default `[0.5, 0.3, 0.2]`.  
-**Ưu tiên:** Must-have.
-
-### FR-04: Ghi log cloud events
-
-**Mô tả:** Mọi sự kiện trên kênh cloud phải được ghi vào bảng `cloud_events`.  
-**Loại sự kiện:** `param_update`, `outage_start`, `outage_end`, `stale_detected`, `twin_rejected`.  
-**Ưu tiên:** Must-have.
-
-### FR-05: Endpoint /detect — Phát hiện bất thường
-
-**Mô tả:** Phát hiện các mẫu bất thường trong telemetry (năng lượng cạn đột ngột, RSSI drop).  
-**Input:** `TelemetrySnapshot`.  
-**Output:** `DetectResponse` (anomaly, reason).  
-**Ưu tiên:** Should-have (Week 6, nếu còn thời gian).
-
-### FR-06: Digital-Twin Validation
-
-**Mô tả:** Trước khi trả weights mới, dự đoán hiệu năng. Nếu tệ hơn hiện tại → `twin_rejected = true`.  
-**Model:** sklearn regression huấn luyện từ dữ liệu `metrics` trong SQLite.  
-**Ưu tiên:** Should-have (Week 6-7).
-
-### FR-07: Mô phỏng NS-3
-
-**Mô tả:** Module simulation phải hỗ trợ 3 cấu hình: `no_cloud`, `local_optimized`, `cloud_assisted`.  
-**Mobility:** Row-constrained (không dùng Random Waypoint).  
-**Channel:** Mô hình suy hao nhà kính (khung kim loại + tán lá).  
-**Output:** Log files CSV với PDR, E2E delay, overhead, energy, cloud_latency.  
-**Ưu tiên:** Must-have.
-
----
+| ID | Yêu cầu | Mục | Trạng thái |
+|---|---|---|---|
+| FR-01 | `GET /health` trả `{"status": "ok"}` | 9.2 | Xong |
+| FR-02 | `POST /optimize` nhận `NetworkSnapshot`, trả `weights` + `rule` theo heuristic 3 luật | 7.2, 9.3 | Xong |
+| FR-03 | `GET /metrics/summary`: PDR, độ trễ trung bình theo cấu hình và kịch bản | 9.2 | Xong |
+| FR-04 | Ghi `param_update` / `outage_start` / `stale_detected` / `outage_end` vào `cloud_events` | 7.3 | Cloud ghi `param_update`; Gateway (NS-3) xuất các sự kiện hạ cấp |
+| FR-05 | Gateway hạ cấp 3 mức theo TTL; mức 3 dùng bộ cân bằng 0,4/0,3/0,3 | 7.3 | Logic xong (`caar_logic.h`), chờ tích hợp NS-3 |
+| FR-06 | Delayed RREQ forwarding: chờ D_max·c_i + U(0, J) trước khi rebroadcast RREQ | 4 | Hàm chi phí xong; sửa `RecvRequest` là việc của Owner A |
+| FR-07 | 4 cấu hình: no_cloud, local_optimized, gateway_heuristic, cloud_assisted | 10.1 | Owner A |
+| FR-08 | Đo trace WAN ≥ 24 giờ, mỗi 2 s | 7.4 | Script xong, chờ EC2 |
 
 ## 4. Yêu cầu phi chức năng
 
-### NFR-01: Hiệu năng API
-
-- `/health` phải phản hồi trong < 50 ms.
-- `/optimize` phải phản hồi trong < 200 ms với payload tiêu chuẩn.
-
-### NFR-02: Độ tin cậy
-
-- Cloud Service phải xử lý graceful degradation mà không crash.
-- Tests phải đạt 100% pass trên CI.
-
-### NFR-03: Khả năng bảo trì
-
-- Code Python phải pass `ruff check` (không có lỗi lint).
-- Mỗi module phải có docstring mô tả mục đích.
-
-### NFR-04: Khả năng mở rộng
-
-- Hệ thống phải hoạt động với 6–20 MANET nodes mà không thay đổi kiến trúc.
-
-### NFR-05: Bảo mật (Kịch bản S4)
-
-- Phân tích bề mặt tấn công mới do kênh cloud tạo ra (MITM, replay attack, gateway SPOF).
-- Ghi lại trong `docs/testing-report.md`.
-
----
+| ID | Yêu cầu |
+|---|---|
+| NFR-01 | Bảo mật kênh 4 lớp: TLS, API key, miền giá trị, độ mới (mục 8.2) |
+| NFR-02 | Bản C++ của heuristic cho kết quả giống hệt bản Python trên `parity_cases.json` |
+| NFR-03 | Mỗi điểm dữ liệu chạy 10 seed, báo cáo mean ± CI 95%; cùng seed cho cùng kết quả |
+| NFR-04 | CI xanh: ruff + pytest cloud, parity g++, test script |
+| NFR-05 | Khóa bí mật chỉ nằm trong biến môi trường / `.env`, không commit |
 
 ## 5. Ràng buộc thiết kế
 
-- Ngôn ngữ backend: Python 3.11+, FastAPI.
-- Ngôn ngữ simulation: C++ (NS-3 module).
-- Database: SQLite (không dùng PostgreSQL để đơn giản hóa setup).
-- CI: GitHub Actions.
+Python 3.11+ / FastAPI / SQLite; C++17 / NS-3 (một tag cố định, ví dụ ns-3.48); Docker Compose + Caddy trên EC2; GitHub Actions.

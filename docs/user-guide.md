@@ -1,139 +1,78 @@
 # Hướng dẫn sử dụng
 
-## 1. Tổng quan
+## 1. Chạy Cloud Service
 
-Hệ thống CAAR gồm hai phần chính mà người dùng tương tác:
-
-1. **Cloud Service** — REST API tối ưu hóa định tuyến cho Gateway.
-2. **NS-3 Simulation** — Công cụ mô phỏng để đánh giá hiệu năng CAAR.
-
----
-
-## 2. Chạy Cloud Service
-
-### 2.1 Cách đơn giản nhất (local)
+Local:
 
 ```bash
 cd cloud-service
 pip install -r requirements.txt
+export CAAR_API_KEY=dev-key        # Windows: set CAAR_API_KEY=dev-key
 uvicorn app.main:app --host 0.0.0.0 --port 8000
+curl http://localhost:8000/health  # {"status":"ok"}
 ```
 
-### 2.2 Chạy bằng Docker
+EC2 (mục 13.3): tạo EC2 Ubuntu ở ap-southeast-1, mở cổng 22 (chỉ IP của bạn), 80, 443;
+trỏ một tên miền về IP; rồi
 
 ```bash
-docker build -t caar-cloud ./cloud-service
-docker run -p 8000:8000 caar-cloud
+cp deploy/.env.example deploy/.env      # điền CAAR_API_KEY, CAAR_DOMAIN
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+curl https://<tên-miền>/health
 ```
 
-### 2.3 Kiểm tra service
+Tắt instance khi không đo hoặc demo.
+
+## 2. Gọi /optimize
 
 ```bash
-curl http://localhost:8000/health
-# {"status":"ok"}
+curl -X POST https://<tên-miền>/optimize \
+  -H "Content-Type: application/json" -H "X-API-Key: $CAAR_API_KEY" \
+  -d "{\"run_id\": 1, \"timestamp\": $(date +%s), \"nodes\": [
+        {\"node_id\": \"r1\", \"rssi_avg\": -72, \"energy_remaining_pct\": 45, \"hop_count\": 2},
+        {\"node_id\": \"r2\", \"rssi_avg\": -85, \"energy_remaining_pct\": 12, \"hop_count\": 3}]}"
+# {"weights":{"hop_weight":0.2,"rssi_weight":0.3,"energy_weight":0.5},"rule":"low_battery"}
 ```
 
----
+`timestamp` phải là thời điểm hiện tại; lệch quá 30 s bị từ chối (400).
 
-## 3. Gọi API từ Gateway
+## 3. Demo bảo mật (mục 8)
 
-### 3.1 Yêu cầu tối ưu hóa
+| Thử | Lệnh | Kết quả |
+|---|---|---|
+| Gọi trái phép | bỏ header `X-API-Key` | 401 |
+| Replay | gửi lại body có `timestamp` cũ hơn 30 s | 400 |
+| Replay cùng nonce | gửi cùng body có `"nonce": "abc"` hai lần | lần 2: 400 |
+| Dữ liệu rác | `"energy_remaining_pct": 150` | 422 |
+| Nghe lén | `curl http://<tên-miền>/health` | Caddy chuyển sang HTTPS |
+
+## 4. Đo kênh WAN (mục 13.4)
 
 ```bash
-curl -X POST http://localhost:8000/optimize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "node_id": "node-3",
-    "rssi_avg": -68.5,
-    "energy_remaining_pct": 62.0,
-    "hop_count": 3
-  }'
+export CAAR_API_KEY=...
+python scripts/wan_probe.py --url https://<tên-miền>/optimize --interval 2 --hours 24 \
+    --out contracts/wan_trace.csv
 ```
 
-**Kết quả:**
+Chạy trên máy ở TP.HCM, không tắt máy hay đổi mạng; ghi lại nhà mạng đã dùng.
 
-```json
-{
-  "weights": {
-    "rssi_weight": 0.5,
-    "energy_weight": 0.3,
-    "hop_weight": 0.2
-  },
-  "twin_rejected": false
-}
-```
-
-### 3.2 Hiểu kết quả
-
-| Field | Ý nghĩa |
-|-------|---------|
-| `weights` | Cập nhật vào bảng định tuyến AODV của tất cả nodes |
-| `twin_rejected: false` | Digital-Twin xác nhận weights mới tốt hơn hoặc bằng → áp dụng |
-| `twin_rejected: true` | Digital-Twin dự đoán weights mới sẽ làm giảm PDR → **không áp dụng**, giữ nguyên weights cũ |
-
-### 3.3 Graceful Degradation
-
-Nếu Gateway không nhận được response từ `/optimize` trong thời gian cho phép:
-1. Dùng `last_known_weights` đã cache từ lần gọi thành công gần nhất.
-2. Nếu không có cache → dùng default `{rssi: 0.5, energy: 0.3, hop: 0.2}`.
-3. Mạng MANET tiếp tục hoạt động như AODV phân tán thuần túy.
-
----
-
-## 4. Chạy mô phỏng NS-3
-
-> Xem hướng dẫn đầy đủ tại [`simulation/README.md`](../simulation/README.md).
-
-### 4.1 Quy trình cơ bản
+## 5. Chạy mô phỏng và phân tích
 
 ```bash
-# 1. Cài NS-3 (xem simulation/README.md)
-# 2. Chạy kịch bản baseline
-./ns3 run "caar-scenario --config=no_cloud --seed=42"
-
-# 3. Chạy kịch bản cloud-assisted
-./ns3 run "caar-scenario --config=cloud_assisted --cloud-url=http://localhost:8000 --seed=42"
-
-# 4. Xem kết quả
-cat results/no_cloud_seed42.csv
-cat results/cloud_assisted_seed42.csv
+NS3_DIR=~/ns-3-dev scripts/run_batch.sh s1 s2a s2b     # tối thiểu để bảo vệ
+NS3_DIR=~/ns-3-dev scripts/run_batch.sh s3 sens        # nếu còn thời gian
+python scripts/import_ns3_results.py --db results/results.db --wan-trace contracts/wan_trace.csv
+python scripts/plot_results.py --db results/results.db --out results/figures
 ```
 
-### 4.2 So sánh kết quả
+`results/figures/hypotheses.md` ghi kết luận Q1–Q3 theo tiêu chí mục 10.5.
+Truy vấn SQL mẫu ở mục 13.6 của tài liệu đồ án.
 
-Kết quả mô phỏng lưu trong `cloud-service/results.db`. Truy vấn ví dụ:
-
-```sql
-SELECT r.config_type, AVG(m.pdr), AVG(m.avg_delay_ms)
-FROM runs r JOIN metrics m ON r.id = m.run_id
-GROUP BY r.config_type;
-```
-
----
-
-## 5. Đọc logs cloud events
-
-```sql
-SELECT * FROM cloud_events ORDER BY ts DESC LIMIT 20;
-```
+## 6. Sự kiện trong cloud_events
 
 | `event_type` | Ý nghĩa |
-|-------------|---------|
-| `param_update` | Weights mới được áp dụng thành công |
-| `outage_start` | Cloud bắt đầu không khả dụng |
-| `outage_end` | Cloud khôi phục |
-| `stale_detected` | Gateway phát hiện params quá cũ |
-| `twin_rejected` | Digital-Twin từ chối weights ứng viên |
-
----
-
-## 6. Câu hỏi thường gặp
-
-**Q: Service báo lỗi `422 Unprocessable Entity`?**  
-A: Kiểm tra request body — `rssi_avg` phải là số (không phải string), `energy_remaining_pct` phải trong 0–100.
-
-**Q: Mô phỏng NS-3 chạy rất chậm?**  
-A: Giảm `node_count` hoặc thời gian mô phỏng. Xem gợi ý tối ưu trong `simulation/README.md`.
-
-**Q: `twin_rejected` luôn `false`?**  
-A: Đúng — Digital-Twin hiện là stub (Week 6-7 mới có model thật). Stub luôn trả `false` để không chặn nhầm.
+|---|---|
+| `param_update` | Trọng số mới (Cloud ghi mỗi lần trả lời; Gateway ghi khi áp dụng) |
+| `outage_start` | Gateway gọi Cloud lỗi lần đầu, chuyển mức 2 (dùng cache) |
+| `stale_detected` | Tuổi cache ≥ TTL, chuyển mức 3 (bộ cân bằng) |
+| `outage_end` | Cloud trả lời lại, quay về mức 1 |
