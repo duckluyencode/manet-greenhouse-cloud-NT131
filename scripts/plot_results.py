@@ -24,6 +24,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+
 from caar_stats import significantly_different, summarize, welch_t_test  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]

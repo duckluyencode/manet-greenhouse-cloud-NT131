@@ -31,7 +31,7 @@ jobs:
             cloud-service/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt ruff
+        run: pip install -r requirements.txt ruff==0.17.1
 
       - name: Lint with ruff
         run: ruff check app/ tests/
@@ -54,7 +54,7 @@ jobs:
             scripts/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r scripts/requirements.txt ruff
+        run: pip install -r scripts/requirements.txt ruff==0.17.1
 
       - name: parity_cases.json is up to date
         run: |

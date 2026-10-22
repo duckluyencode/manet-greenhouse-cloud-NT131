@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
+
 from app.heuristic import (
     NodeSample,
     choose_weights,
@@ -11,7 +13,6 @@ from app.heuristic import (
     twice_median,
 )
 from app.models import Weights
-from pydantic import ValidationError
 
 PARITY_FILE = Path(__file__).resolve().parents[2] / "contracts" / "parity_cases.json"
 

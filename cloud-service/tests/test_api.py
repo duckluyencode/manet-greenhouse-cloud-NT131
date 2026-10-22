@@ -2,8 +2,9 @@
 import time
 
 import pytest
-from app.main import app
 from fastapi.testclient import TestClient
+
+from app.main import app
 
 from .conftest import TEST_API_KEY
 

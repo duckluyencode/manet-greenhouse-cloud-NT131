@@ -11,10 +11,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
+
 import caar_stats
 import fit_channel
 import gen_waypoints
-import pytest
 import wan_probe
 
 SCRIPTS = Path(__file__).resolve().parents[1]
