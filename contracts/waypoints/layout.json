@@ -1,0 +1,30 @@
+{
+  "greenhouse_m": [
+    100.0,
+    50.0
+  ],
+  "aisle": {
+    "y_min": 0.0,
+    "y_max": 5.0,
+    "path_y": 2.5
+  },
+  "rails": {
+    "count": 56,
+    "first_x": 0.9,
+    "spacing_m": 1.8,
+    "y_start": 5.0,
+    "length_m": 45.0
+  },
+  "gateway_xy": [
+    50.0,
+    2.5
+  ],
+  "default_params": {
+    "duration_s": 900.0,
+    "rail_speed": 0.2,
+    "aisle_speed": 0.5,
+    "stop_every_m": 2.0,
+    "stop_min_s": 15.0,
+    "stop_max_s": 24.0
+  }
+}
