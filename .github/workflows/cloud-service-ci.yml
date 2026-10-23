@@ -108,7 +108,7 @@ jobs:
         working-directory: ${{ runner.temp }}/ns-3-dev
         run: |
           ./ns3 configure --build-profile=optimized --disable-examples --disable-tests \
-            --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation"
+            --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim"
           ./ns3 build
           ccache --show-stats
 

@@ -10,6 +10,7 @@ Kiểm tra:
 4. w_h = 1 (wr = we = 0): PDR của local_optimized nằm trong CI 95% của no_cloud
    (chỉ khi truyền --seeds >= 3, vì cần nhiều seed).
 5. Kết quả nhập được vào SQLite bằng import_ns3_results.py.
+6. --netanim ghi được file XML NetAnim hoàn chỉnh, Gateway đi qua đủ 3 mức khi mất cloud.
 
 Chạy: python scripts/check_ns3.py --ns3 /opt/ns-3-dev --out /tmp/caar-check [--seeds 5]
 """
@@ -149,6 +150,17 @@ def main() -> None:
     )
     print("  " + proc.stdout.strip())
     check(proc.returncode == 0 and "5 imported" in proc.stdout, "5 runs imported")
+
+    print("6. NetAnim trace")
+    anim = args.out / "anim" / "outage.xml"
+    run_caar(args.ns3, args.out / "anim" / "outage.csv", "cloud_assisted", 1, "outage",
+             "--ttl=60", "--outage-start=300", "--outage-end=600",
+             f"--netanim={anim}", "--netanim-start=295", "--netanim-stop=305")
+    text = anim.read_text(encoding="utf-8") if anim.exists() else ""
+    check(text.startswith("<anim") and text.rstrip().endswith("</anim>"), "NetAnim XML is complete")
+    check(all(f'descr="Gateway L{lv}"' in text for lv in (1, 2, 3)),
+          "NetAnim shows Gateway levels L1, L2, L3")
+    check("<wpr" in text, "NetAnim contains wireless packet records")
 
     print()
     if failures:

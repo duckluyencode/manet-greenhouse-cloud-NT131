@@ -21,6 +21,9 @@
 // - RSSI theo từng hàng xóm: trung bình trượt (EWMA) trên trace MonitorSnifferRx.
 // - Pin: biến theo node, hao hằng số khi di chuyển và một lượng nhỏ mỗi gói IP phát.
 // - Trọng số Gateway nhận được áp dụng ngay cho mọi robot (không mô phỏng gói phát lại).
+//
+// Hiển thị: --netanim=<file.xml> ghi trace NetAnim (mở bằng trình xem NetAnim). Robot đổi
+// màu theo pin (xanh -> đỏ), Gateway đổi màu theo mức hạ cấp (xanh dương / cam / đỏ).
 #include "caar_logic.h"
 
 #include "ns3/aodv-helper.h"
@@ -29,6 +32,7 @@
 #include "ns3/flow-monitor-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/mobility-module.h"
+#include "ns3/netanim-module.h"
 #include "ns3/network-module.h"
 #include "ns3/propagation-module.h"
 #include "ns3/wifi-module.h"
@@ -41,6 +45,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -122,6 +127,7 @@ double g_wanConstantRttMs = 40;
 
 caar::Weights g_activeWeights = caar::BalancedWeights();
 caar::GatewayState* g_gateway = nullptr;
+AnimationInterface* g_anim = nullptr;
 
 std::vector<Ptr<Node>> g_nodes; // 0 = Gateway, 1..N = robot
 std::vector<Ipv4Address> g_ip;
@@ -454,6 +460,15 @@ LogEvents(const std::vector<std::string>& events, const std::string& payload)
         g_events.push_back({Simulator::Now().GetSeconds(), e, e == caar::kParamUpdate ? payload : ""});
     }
     g_activeWeights = g_gateway->Active();
+    if (g_anim)
+    {
+        // Gateway: mức 1 xanh dương, mức 2 cam (dùng cache), mức 3 đỏ (bộ cân bằng).
+        static const uint8_t kLevelColor[3][3] = {{30, 90, 220}, {240, 150, 20}, {210, 40, 40}};
+        int level = static_cast<int>(g_gateway->level());
+        const uint8_t* c = kLevelColor[level - 1];
+        g_anim->UpdateNodeColor(g_nodes[0], c[0], c[1], c[2]);
+        g_anim->UpdateNodeDescription(g_nodes[0], "Gateway L" + std::to_string(level));
+    }
 }
 
 std::vector<caar::NodeSample>
@@ -549,6 +564,21 @@ GatewayTick()
     Simulator::Schedule(g_period, &GatewayTick);
 }
 
+// Robot đổi màu theo pin: 100 % xanh lá -> 0 % đỏ; nhãn ghi tên và % pin.
+void
+UpdateAnimation()
+{
+    for (uint32_t i = 1; i <= g_nRobots; ++i)
+    {
+        double e = g_energyPct[i] / 100.0;
+        g_anim->UpdateNodeColor(g_nodes[i], uint8_t(220 * (1 - e)), uint8_t(180 * e + 20), 40);
+        std::ostringstream label;
+        label << "r" << i << " " << std::lround(g_energyPct[i]) << "%";
+        g_anim->UpdateNodeDescription(g_nodes[i], label.str());
+    }
+    Simulator::Schedule(Seconds(5), &UpdateAnimation);
+}
+
 // ---------------------------------------------------------------------------
 // Kết quả
 // ---------------------------------------------------------------------------
@@ -616,6 +646,9 @@ main(int argc, char* argv[])
     std::string wanTracePath;
     std::string outPath;
     std::string fixedWeights;
+    std::string netanimPath;
+    double netanimStart = 0;
+    double netanimStop = -1;
 
     CommandLine cmd(__FILE__);
     cmd.AddValue("config", "no_cloud | local_optimized | gateway_heuristic | cloud_assisted", config);
@@ -642,6 +675,9 @@ main(int argc, char* argv[])
     cmd.AddValue("fixed-weights", "Ghi đè trọng số local_optimized, ví dụ 1,0,0", fixedWeights);
     cmd.AddValue("drain-move", "Hao pin khi di chuyển (%/s)", g_drainMovePctPerS);
     cmd.AddValue("drain-tx", "Hao pin mỗi gói IP phát (%)", g_drainTxPct);
+    cmd.AddValue("netanim", "Ghi trace NetAnim ra file XML (trống = tắt)", netanimPath);
+    cmd.AddValue("netanim-start", "Bắt đầu ghi gói tin cho NetAnim (s)", netanimStart);
+    cmd.AddValue("netanim-stop", "Dừng ghi gói tin cho NetAnim (s), âm = tới cuối", netanimStop);
     cmd.Parse(argc, argv);
 
     if (config == "no_cloud")
@@ -863,6 +899,25 @@ main(int argc, char* argv[])
     if (g_config == SimConfig::kGatewayHeuristic || g_config == SimConfig::kCloudAssisted)
     {
         Simulator::Schedule(g_period, &GatewayTick);
+    }
+
+    std::unique_ptr<AnimationInterface> anim;
+    if (!netanimPath.empty())
+    {
+        anim = std::make_unique<AnimationInterface>(netanimPath);
+        g_anim = anim.get();
+        anim->SetMobilityPollInterval(Seconds(1));
+        anim->SetMaxPktsPerTraceFile(50'000'000);
+        anim->SetStartTime(Seconds(netanimStart));
+        anim->SetStopTime(Seconds(netanimStop < 0 ? duration : netanimStop));
+        anim->UpdateNodeDescription(g_nodes[0], "Gateway L1");
+        anim->UpdateNodeColor(g_nodes[0], 30, 90, 220);
+        anim->UpdateNodeSize(g_nodes[0]->GetId(), 3, 3);
+        for (uint32_t i = 1; i <= nodes; ++i)
+        {
+            anim->UpdateNodeSize(g_nodes[i]->GetId(), 2, 2);
+        }
+        UpdateAnimation();
     }
 
     FlowMonitorHelper flowHelper;

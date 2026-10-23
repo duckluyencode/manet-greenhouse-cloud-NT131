@@ -27,7 +27,7 @@ ARG JOBS=4
 ENV JOBS=${JOBS}
 WORKDIR /opt/ns-3-dev
 RUN ./ns3 configure --build-profile=optimized --disable-examples --disable-tests \
-        --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation" \
+        --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim" \
     && ./ns3 build -j ${JOBS}
 
 # --- caar: áp patch delayed RREQ + kịch bản scratch/caar --------------------------
