@@ -62,7 +62,10 @@ Tùy chọn: `<cùng tên>_events.csv` với cột `ts, event_type, payload` (lo
 
 `import_ns3_results.py` đọc thông tin run từ nội dung file, tên file chỉ để không trùng.
 
-## Tham số dòng lệnh `scratch/caar` mà `run_batch.sh` truyền
+## Chương trình NS-3 `caar`
 
-Mục 13.5: `--config --seed --nodes --dmax --ttl --outage-start --outage-end --wan-trace`.
-Đề xuất thêm (A xác nhận): `--scenario`, `--waypoints=<csv>`, `--channel=<json>`, `--out=<csv>`.
+`simulation/scratch/caar.cc` (cài bằng `simulation/install.sh`) đọc các file trên và ghi
+đúng định dạng kết quả ở mục trước. `params` do `caar` ghi gồm `dmax_ms`, `jitter_ms`,
+`ttl_s`, `period_s`, `outage_start_s`/`outage_end_s` (khi có), `wan_model`
+(`none` | `constant` | `trace`), `window_s` và `pdr_window` (PDR của gói gửi trong cửa sổ,
+mặc định 300–600 s, dùng cho Q3). Danh sách tham số dòng lệnh: `simulation/README.md`.

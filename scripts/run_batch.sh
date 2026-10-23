@@ -9,9 +9,10 @@
 # Mỗi run ghi results/raw/<config>_<scenario>[_<biến thể>]_<seed>.csv; run đã có file thì bỏ qua,
 # nên chạy lại sau khi bị ngắt sẽ tiếp tục từ chỗ dừng.
 #
-# Tham số dòng lệnh truyền cho scratch/caar (Owner A cài đặt):
+# Chương trình NS-3: simulation/scratch/caar.cc, cài bằng simulation/install.sh. Tham số:
 #   --config --seed --nodes --dmax --ttl --outage-start --outage-end --wan-trace  (mục 13.5)
-#   --scenario --waypoints --channel --out                                         (thêm, xem contracts/README.md)
+#   --scenario --waypoints --channel --out --speed                                 (contracts/README.md)
+# --wan-trace chỉ được truyền khi contracts/wan_trace.csv đã có; chưa có thì caar dùng RTT hằng số.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -39,17 +40,17 @@ total=0
 skipped=0
 failed=0
 
-# run <config> <scenario> <variant> <seed> <nodes> <waypoint-tag> [extra args...]
+# run <config> <scenario> <variant> <seed> <nodes> <waypoint-tag> <speed> [extra args...]
 run() {
-  local config=$1 scenario=$2 variant=$3 seed=$4 nodes=$5 wp_tag=$6
-  shift 6
+  local config=$1 scenario=$2 variant=$3 seed=$4 nodes=$5 wp_tag=$6 speed=$7
+  shift 7
   local name="${config}_${scenario}"
   [[ -n "$variant" ]] && name+="_${variant}"
   local out="$RAW/${name}_${seed}.csv"
   local waypoints="$CONTRACTS/waypoints/${nodes}_${seed}${wp_tag:+_$wp_tag}.csv"
-  local args="scratch/caar --config=$config --scenario=$scenario --seed=$seed --nodes=$nodes"
+  local args="caar --config=$config --scenario=$scenario --seed=$seed --nodes=$nodes --speed=$speed"
   args+=" --waypoints=$waypoints --channel=$CONTRACTS/channel.json --out=$out"
-  if [[ "$config" == "cloud_assisted" ]]; then
+  if [[ "$config" == "cloud_assisted" && -s "$CONTRACTS/wan_trace.csv" ]]; then
     args+=" --wan-trace=$CONTRACTS/wan_trace.csv"
   fi
   [[ $# -gt 0 ]] && args+=" $*"
@@ -73,21 +74,21 @@ run() {
 s1() {  # Hiệu năng: 4 cấu hình, tham số mặc định — Q1, Q2a, Q2b
   for seed in $SEEDS; do
     for config in $CONFIGS; do
-      run "$config" baseline "" "$seed" 10 "" --ttl=60 --dmax=20
+      run "$config" baseline "" "$seed" 10 "" 0.2 --ttl=60 --dmax=20
     done
   done
 }
 
 s2a() {  # Mất cloud 300–600 s — Q3
   for seed in $SEEDS; do
-    run cloud_assisted outage "" "$seed" 10 "" --ttl=60 --dmax=20 --outage-start=300 --outage-end=600
+    run cloud_assisted outage "" "$seed" 10 "" 0.2 --ttl=60 --dmax=20 --outage-start=300 --outage-end=600
   done
 }
 
 s2b() {  # Trọng số cũ: TTL 15, 60, 300 s
   for seed in $SEEDS; do
     for ttl in 15 60 300; do
-      run cloud_assisted stale "ttl$ttl" "$seed" 10 "" --ttl="$ttl" --dmax=20 --outage-start=300 --outage-end=600
+      run cloud_assisted stale "ttl$ttl" "$seed" 10 "" 0.2 --ttl="$ttl" --dmax=20 --outage-start=300 --outage-end=600
     done
   done
 }
@@ -96,7 +97,7 @@ s3() {  # Quy mô: 6, 10, 16, 20 robot
   for seed in $SEEDS; do
     for nodes in 6 10 16 20; do
       for config in $CONFIGS; do
-        run "$config" scale "n$nodes" "$seed" "$nodes" "" --ttl=60 --dmax=20
+        run "$config" scale "n$nodes" "$seed" "$nodes" "" 0.2 --ttl=60 --dmax=20
       done
     done
   done
@@ -106,11 +107,11 @@ sens() {  # Độ nhạy: D_max 5, 10, 20 ms; tốc độ 0,2 và 1 m/s
   for seed in $SEEDS; do
     for config in local_optimized cloud_assisted; do
       for dmax in 5 10 20; do
-        run "$config" sensitivity "dmax$dmax" "$seed" 10 "" --ttl=60 --dmax="$dmax"
+        run "$config" sensitivity "dmax$dmax" "$seed" 10 "" 0.2 --ttl=60 --dmax="$dmax"
       done
       # Tốc độ 0,2 m/s chính là run dmax20 ở trên nên không chạy lại.
       # Quỹ đạo 1 m/s: python scripts/gen_waypoints.py --nodes 10 --rail-speed 1 --aisle-speed 1 --tag v1
-      run "$config" sensitivity "speedv1" "$seed" 10 v1 --ttl=60 --dmax=20
+      run "$config" sensitivity "speedv1" "$seed" 10 v1 1 --ttl=60 --dmax=20
     done
   done
 }

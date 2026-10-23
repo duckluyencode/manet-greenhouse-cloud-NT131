@@ -7,6 +7,17 @@ Versioning theo kế hoạch: `v0.1-alpha` → `v0.3-beta` → `v0.6` → `v1.0-
 
 ## [Unreleased]
 
+### Added — tích hợp NS-3 (ns-3.48)
+
+- `simulation/aodv-patch/caar-delayed-rreq.patch`: hook thời gian chờ rebroadcast RREQ
+  (`SetRreqForwardDelayCallback`) và trace `RouteDiscovery`; không gắn hook thì AODV chạy như bản gốc
+- `simulation/scratch/caar.cc`: kịch bản 4 cấu hình, đọc `contracts/`, ghi CSV theo hợp đồng
+  và log sự kiện Gateway; `params.pdr_window` cho Q3
+- `simulation/install.sh`, `simulation/Dockerfile` (Ubuntu 24.04 + ns-3.48)
+- `scripts/check_ns3.py`: kiểm tra mục 14.3; CI job `ns3` build ns-3 và chạy kiểm tra này
+- `run_batch.sh` gọi chương trình `caar`, truyền `--speed`, chỉ truyền `--wan-trace` khi đã có trace
+- `ruff.toml`, pin `ruff==0.17.1` trong CI
+
 ### Added — phần Owner B theo tài liệu đồ án bản cập nhật (20/10/2026)
 
 - `/optimize` nhận `NetworkSnapshot` và chạy heuristic toàn mạng (mục 7.2) trong `app/heuristic.py`;

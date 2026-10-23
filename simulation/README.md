@@ -1,41 +1,79 @@
-# simulation/ — NS-3 module (Owner: A)
+# simulation/ — NS-3 (ns-3.48)
 
-Môi trường tạo repo này **không có mạng** nên không tự tải/cài NS-3 giúp bạn được.
-Cần cài trên máy của bạn theo các bước dưới đây.
+| Thư mục / file | Nội dung |
+|---|---|
+| `aodv-patch/caar-delayed-rreq.patch` | Patch `src/aodv`: hook thời gian chờ rebroadcast RREQ + trace `RouteDiscovery` |
+| `scratch/caar.cc` | Kịch bản 4 cấu hình (mục 10.1), đọc `contracts/`, ghi CSV kết quả |
+| `caar-logic/caar_logic.h` | Heuristic, chi phí c_i, máy trạng thái Gateway (C++ thuần, có parity test) |
+| `install.sh` | Áp patch (bỏ qua nếu đã áp) và chép `caar.cc` + `caar_logic.h` vào `scratch/caar/` |
+| `Dockerfile` | Ubuntu 24.04 + ns-3.48 đã cài CAAR |
 
-## Cài đặt NS-3 (chạy trên máy bạn)
+## Cài trên máy (Ubuntu 24.04 / WSL2)
 
 ```bash
-# 1. Clone NS-3 (bản ổn định, ví dụ ns-3.42 — kiểm tra bản mới nhất trên trang chủ NS-3)
-git clone https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
-cd ns-3-dev
-
-# 2. Cấu hình + build (lần đầu khá lâu, 10-30 phút tùy máy)
-./ns3 configure --enable-tests --enable-examples
+sudo apt install g++ cmake ninja-build python3 git patch ccache
+git clone --depth 1 --branch ns-3.48 https://gitlab.com/nsnam/ns-3-dev.git ~/ns-3-dev
+simulation/install.sh ~/ns-3-dev
+cd ~/ns-3-dev
+./ns3 configure --build-profile=optimized --disable-examples --disable-tests \
+  --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation"
 ./ns3 build
-
-# 3. Kiểm tra AODV mẫu có sẵn chạy được không
-./ns3 run "aodv --help"
 ```
 
-> Khuyến nghị: đóng gói bước trên vào 1 Dockerfile chung cho cả nhóm (Master Plan
-> Risk R1) để tránh lệch phiên bản giữa 2 máy — đây là task Day 5 trong Daily Plan.
+Sửa `caar.cc` hoặc `caar_logic.h` trong repo thì chạy lại `install.sh` rồi `./ns3 build`.
 
-## Cấu trúc dự kiến trong thư mục này
+## Hoặc dùng Docker
 
-```
-simulation/
-├── model/     # mobility model nhà kính (row-constrained), channel/attenuation model
-├── helper/    # helper class dựng scenario (3 cấu hình: no_cloud/local_optimized/cloud_assisted)
-└── test/      # NS-3 test suite (Owner A, Week 3, DoD-Test)
+```bash
+docker build -f simulation/Dockerfile -t caar-ns3 .
+docker run --rm -v "$PWD:/repo" caar-ns3 python3 scripts/check_ns3.py --ns3 /opt/ns-3-dev --out /tmp/check
+docker run --rm -v "$PWD:/repo" -e NS3_DIR=/opt/ns-3-dev caar-ns3 scripts/run_batch.sh s1 s2a s2b
 ```
 
-## Việc cần làm (đối chiếu Master Plan — Section 5)
+## Chạy một kịch bản
 
-| Ngày | Việc | Ghi chú |
+```bash
+cd ~/ns-3-dev
+./ns3 run "caar --config=cloud_assisted --scenario=outage --seed=1 --nodes=10 \
+  --waypoints=$REPO/contracts/waypoints/10_1.csv --channel=$REPO/contracts/channel.json \
+  --ttl=60 --dmax=20 --outage-start=300 --outage-end=600 \
+  --out=$REPO/results/raw/cloud_assisted_outage_1.csv"
+./ns3 run "caar --help"     # mọi tham số
+```
+
+| Tham số | Mặc định | Ý nghĩa |
 |---|---|---|
-| Day 15-16 | Mobility model row-constrained | Không dùng Random Waypoint mặc định — xem lý do ở `bao-ve-thu-qa-workflow-topology.md` Phần B |
-| Day 17 | Channel/attenuation model | Suy hao khung kim loại + tán lá; tham số hóa theo giai đoạn sinh trưởng để phục vụ Scenario S8 (Dual-Horizon) sau này |
-| Day 18 | Tích hợp AODV baseline (có sẵn trong NS-3) + unit test | DoD-Dev + DoD-Test |
-| Day 22 | Local-Optimized AODV variant | Sửa metric: RSSI + hop-count + năng lượng còn lại |
-| Day 23 | Cloud-Assisted variant — wiring bridge tới `cloud-service/` | Đọc/ghi tham số qua file hoặc socket cục bộ, có timeout → graceful degradation khi Cloud không phản hồi |
+| `--config` | `no_cloud` | `no_cloud` \| `local_optimized` \| `gateway_heuristic` \| `cloud_assisted` |
+| `--scenario` | `baseline` | Ghi vào cột `scenario` |
+| `--seed` | 1 | `RngRun`; cùng seed cho cùng kết quả |
+| `--nodes` | 10 | Số robot, phải khớp file waypoints |
+| `--dmax`, `--jitter` | 20, 2 ms | D_i = D_max · c_i + U(0, J) |
+| `--ttl`, `--period`, `--cloud-timeout` | 60, 5, 2 s | Gateway (mục 7.3) |
+| `--outage-start`, `--outage-end` | −1 (không mất) | Mất WAN trong khoảng này |
+| `--wan-trace` | trống | `contracts/wan_trace.csv`; trống thì RTT hằng số `--wan-rtt-ms` (40 ms) |
+| `--fixed-weights` | trống | Ghi đè trọng số `local_optimized`, ví dụ `1,0,0` (kiểm tra w_h = 1) |
+| `--window-start`, `--window-end` | 300, 600 s | Cửa sổ tính `params.pdr_window` (dùng cho Q3) |
+| `--speed` | 0,2 | Ghi vào cột `mobility_speed` |
+| `--drain-move`, `--drain-tx` | 0,02 %/s, 0,001 %/gói | Hao pin (mục 6.3) |
+
+## Mô hình trong `caar.cc`
+
+- Node 0 là Gateway (vị trí trong `contracts/waypoints/layout.json`), robot là node 1..N theo file waypoints.
+- WiFi 802.11b ad hoc 1 Mbps; công suất phát và ngưỡng thu lấy từ `channel.json`;
+  kênh `LogDistancePropagationLossModel` + `RandomPropagationLossModel` (chuẩn, σ).
+- Mỗi robot gửi UDP 128 B/s tới Gateway (cổng 9). Gói mang pin và RSSI trung bình của
+  robot, nên Gateway dựng `NetworkSnapshot` từ chính gói nhận được.
+- RSSI theo hàng xóm: EWMA (α = 0,1) trên trace `MonitorSnifferRx`.
+- `no_cloud` không gắn hook nên AODV chạy đúng như bản gốc (jitter U(0, 10) ms).
+- `cloud_assisted`: mỗi T giây Gateway lấy ngẫu nhiên một dòng trace WAN; timeout, lỗi HTTP
+  hoặc đang mất cloud thì báo lỗi sau 2 s, ngược lại trả trọng số sau RTT.
+- Trọng số Gateway nhận được áp dụng ngay cho mọi robot (không mô phỏng gói phát trọng số).
+- `cloud_bandwidth_bytes`: tổng byte JSON request + response, không tính header HTTP/TLS.
+
+## Kiểm tra (mục 14.3)
+
+```bash
+python3 scripts/check_ns3.py --ns3 ~/ns-3-dev --out /tmp/caar-check --seeds 5
+```
+
+Chạy cả trên CI (job `ns3`).

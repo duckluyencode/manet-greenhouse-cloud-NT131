@@ -190,6 +190,19 @@ def hypotheses(runs) -> str:
     def pdr(scenario, config):
         return values(runs, "pdr", scenario=scenario, config_type=config)
 
+    def pdr_window(scenario, config):
+        return [float(r["params"]["pdr_window"]) for r in runs
+                if r["scenario"] == scenario and r["config_type"] == config
+                and r["params"].get("pdr_window") is not None]
+
+    # Q3 xét PDR trong khoảng mất cloud; caar.cc ghi số này vào params.pdr_window.
+    if pdr_window("outage", "cloud_assisted") and pdr_window("baseline", "no_cloud"):
+        q3, q3_metric = pdr_window, "pdr_window"
+        q3_note = "PDR của các gói gửi trong cửa sổ mất cloud (params.window_s)"
+    else:
+        q3, q3_metric = pdr, "PDR"
+        q3_note = "PDR của cả run vì kết quả không có params.pdr_window"
+
     lines = [
         "# Kiểm chứng giả thuyết (mục 10.5)",
         "",
@@ -205,12 +218,13 @@ def hypotheses(runs) -> str:
         verdict_line("Q2b", "cloud_assisted ≈ gateway_heuristic", "cloud_assisted",
                      pdr("baseline", "cloud_assisted"), "gateway_heuristic",
                      pdr("baseline", "gateway_heuristic"), "same"),
-        verdict_line("Q3", "Mất cloud: PDR cloud_assisted (S2a) không thấp hơn no_cloud (S1)",
-                     "cloud_assisted S2a", pdr("outage", "cloud_assisted"),
-                     "no_cloud S1", pdr("baseline", "no_cloud"), "not_lower"),
+        verdict_line(
+            "Q3", f"Mất cloud: {q3_metric} cloud_assisted (S2a) không thấp hơn no_cloud (S1)",
+            "cloud_assisted S2a", q3("outage", "cloud_assisted"),
+            "no_cloud S1", q3("baseline", "no_cloud"), "not_lower",
+        ),
         "",
-        "Ghi chú: Q3 dùng PDR của cả run 900 s. Nếu mô phỏng xuất PDR riêng trong khoảng",
-        "mất cloud (300–600 s), nên so sánh trên số đó.",
+        f"Ghi chú: Q3 so sánh {q3_note}.",
         "Mọi kết quả, kể cả bác bỏ giả thuyết, được báo cáo trung thực.",
     ]
     return "\n".join(lines) + "\n"
