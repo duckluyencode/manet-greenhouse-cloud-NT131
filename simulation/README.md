@@ -6,17 +6,23 @@ Cần cài trên máy của bạn theo các bước dưới đây.
 ## Cài đặt NS-3 (chạy trên máy bạn)
 
 ```bash
-# 1. Clone NS-3 (bản ổn định, ví dụ ns-3.42 — kiểm tra bản mới nhất trên trang chủ NS-3)
+# 1. Clone NS-3 và chuyển sang tag cố định ns-3.48 (không dùng nhánh dev)
 git clone https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
 cd ns-3-dev
+git checkout ns-3.48
+git describe --tags   # phải hiện đúng "ns-3.48"
 
-# 2. Cấu hình + build (lần đầu khá lâu, 10-30 phút tùy máy)
-./ns3 configure --enable-tests --enable-examples
-./ns3 build
+# 2. Cấu hình + build (lần đầu khá lâu, 20-40 phút tùy máy)
+./ns3 configure --build-profile=optimized --enable-examples
+./ns3 build -j4
 
-# 3. Kiểm tra AODV mẫu có sẵn chạy được không
-./ns3 run "aodv --help"
+# 3. Kiểm tra AODV mẫu chạy được
+./ns3 run aodv-example
+# Kỳ vọng: gói đầu chậm (vài trăm ms đến vài giây), các gói sau nhanh dần (~7-8 ms)
 ```
+
+> Phiên bản NS-3 phải khớp với tag `ns-3.48` để máy các thành viên và Docker
+> build ra kết quả giống nhau. Dockerfile trong thư mục này đã được ghim cùng tag.
 
 > Khuyến nghị: đóng gói bước trên vào 1 Dockerfile chung cho cả nhóm (Master Plan
 > Risk R1) để tránh lệch phiên bản giữa 2 máy — đây là task Day 5 trong Daily Plan.
