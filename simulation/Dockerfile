@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y software-properties-common \
 
 # 3. Clone NS-3
 WORKDIR /opt
-RUN git clone https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
+RUN git clone --branch ns-3.48 --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
 
 # 4. Build NS-3
 WORKDIR /opt/ns-3-dev
@@ -41,3 +41,4 @@ RUN ./ns3 configure --enable-tests --enable-examples \
 WORKDIR /opt/ns-3-dev/scratch
 
 CMD ["/bin/bash"]
+
