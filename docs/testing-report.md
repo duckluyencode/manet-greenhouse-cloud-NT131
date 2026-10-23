@@ -9,7 +9,7 @@ Theo mục 14 của tài liệu đồ án. Cập nhật 22/10/2026.
 | Unit/API cloud | pytest + TestClient (`cloud-service/tests/`) | CI mỗi push | 34 test pass |
 | Parity Python ↔ C++ | `contracts/parity_cases.json` + `simulation/caar-logic/test_caar_logic.cpp` | CI mỗi push | 704 kiểm tra pass |
 | Script phân tích | pytest (`scripts/tests/`) | CI mỗi push | 17 test pass |
-| Tính đúng mô phỏng | NS-3 (Owner A) | Thủ công | Chưa có |
+| Tính đúng mô phỏng | `scripts/check_ns3.py` trên ns-3.48 | CI job `ns3` mỗi push | 6 nhóm kiểm tra pass (Docker, 23/10) |
 | Đầu-cuối | curl, Swagger trên AWS | Trước demo | Chưa có (chưa deploy EC2) |
 
 ## Test case cloud (bảng 14.2) — `tests/test_api.py`
@@ -45,13 +45,19 @@ Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400
 
 Đã thử đổi `>=` thành `>` ở ngưỡng f_low: test báo 10 lỗi, tức bộ test bắt được sai lệch này.
 
-## Kiểm tra tính đúng của mô phỏng (mục 14.3) — việc của Owner A
+## Kiểm tra tính đúng của mô phỏng (mục 14.3) — `scripts/check_ns3.py`
 
-- [ ] w_h = 1: PDR local_optimized nằm trong CI của no_cloud.
-- [ ] Tầm liên kết từ cấu hình radio cỡ 18–20 m (`contracts/channel.json`: 17,85 m với 16 dBm / −82 dBm).
+- [x] w_h = 1: PDR local_optimized nằm trong CI 95% của no_cloud (5 seed).
+- [x] Tầm liên kết từ cấu hình radio: 29,35 m với WiFi 20 dBm / −88 dBm (`contracts/channel.json`).
+  Đã đổi khỏi mốc 18–20 m của bản tài liệu: cặp 16 dBm / −82 dBm là của radio 802.15.4 đã đo,
+  còn robot dùng WiFi (mục 1.1, 5.4). Ở 18 m, với 10 robot chỉ ~19 % thời gian robot có đường
+  về Gateway (PDR mô phỏng 0,14–0,23), nên Q1–Q3 gần như không đo được. Ở 29 m là ~82 %.
+  Độ nhạy thấp hơn −90 dBm làm PHY của ns-3.48 dừng ("Invalid WifiPhy state RX").
 - [x] Mọi waypoint nằm trên lối chính hoặc hàng ray, trong 100 × 50 m (`gen_waypoints.validate`, test).
-- [ ] Log mất cloud theo thứ tự outage_start → stale_detected → outage_end.
-- [ ] Cùng seed chạy hai lần cho kết quả giống hệt.
+- [x] Log mất cloud theo thứ tự outage_start → stale_detected (357 s, TTL 60 s) → outage_end;
+  không có param_update trong lúc mất cloud.
+- [x] Cùng seed chạy hai lần cho kết quả giống hệt.
+- [x] 4 cấu hình chạy được, CSV đúng hợp đồng, nhập được vào SQLite; NetAnim ghi đủ 3 mức Gateway.
 
 ## Chạy test
 

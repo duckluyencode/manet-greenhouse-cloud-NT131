@@ -9,12 +9,19 @@ Tham số kênh truyền log-distance cho NS-3 (mục 5) -> contracts/channel.js
   sigma là độ lệch chuẩn phần dư của phép fit (bậc tự do m - 2).
 - Tầm liên kết: d_max = d0 · 10^((P_tx - S_rx - PL(d0)) / (10 n)) (mục 5.4).
 
+Radio mặc định: WiFi 802.11b 1 Mbps của robot, phát 20 dBm, độ nhạy -88 dBm (tầm ~29 m).
+Robot dùng WiFi chứ không dùng radio 802.15.4 đã đo (mục 1.1, 5.4); cặp 16 / -82 dBm của
+tài liệu cho tầm ~18 m, khi đó với 10 robot khoảng 80 % thời gian robot không có đường về
+Gateway. Độ nhạy không được thấp hơn -90 dBm (nhiễu nền kênh 22 MHz + 4 dB): ns-3.48 dừng
+với "Invalid WifiPhy state RX" ở ngưỡng sát nhiễu nền (xem simulation/scratch/caar.cc).
+
 Số đo: CSV có cột distance_m, path_loss_db, nhập tay từ Bảng 2 của
 Cama-Pinto et al. (2019). Repo chưa có file này; khi không truyền --measurements,
 script dùng n, sigma đã ghi trong tài liệu đồ án (4,63 / 5,15 dB ở anten 0,5 m)
 và ghi rõ nguồn trong channel.json.
 
-Chạy: python scripts/fit_channel.py --tx-power 16 --rx-sensitivity -82
+Chạy: python scripts/fit_channel.py
+      python scripts/fit_channel.py --tx-power 16 --rx-sensitivity -82   # cặp số của tài liệu
       python scripts/fit_channel.py --measurements data/cama_pinto_table2_0.5m.csv
 """
 import argparse
@@ -26,6 +33,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "contracts" / "channel.json"
 SPEED_OF_LIGHT = 299_792_458.0
+# Độ nhạy thấp nhất caar.cc chấp nhận (nhiễu nền 22 MHz + 4 dB SNR preamble).
+MIN_RX_SENSITIVITY_DBM = -90.0
 
 # Giá trị tài liệu đồ án đã fit từ Bảng 2 (mục 5.3), theo chiều cao anten.
 DOCUMENTED_FIT = {
@@ -72,10 +81,12 @@ def main() -> None:
     parser.add_argument("--measurements", type=Path, help="CSV distance_m,path_loss_db")
     parser.add_argument("--antenna-height", type=float, default=0.5, choices=sorted(DOCUMENTED_FIT))
     parser.add_argument("--freq-ghz", type=float, default=2.4)
-    parser.add_argument("--tx-power", type=float, default=16.0, help="dBm, công suất phát radio NS-3")
-    parser.add_argument("--rx-sensitivity", type=float, default=-82.0, help="dBm, ngưỡng thu")
+    parser.add_argument("--tx-power", type=float, default=20.0, help="dBm, công suất phát radio NS-3")
+    parser.add_argument("--rx-sensitivity", type=float, default=-88.0, help="dBm, ngưỡng thu")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
+    if args.rx_sensitivity < MIN_RX_SENSITIVITY_DBM:
+        parser.error(f"--rx-sensitivity must be >= {MIN_RX_SENSITIVITY_DBM} dBm (noise floor + 4 dB)")
 
     ref_loss = friis_loss_db(args.freq_ghz * 1e9)
     if args.measurements:

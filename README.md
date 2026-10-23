@@ -106,7 +106,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 pip install -r scripts/requirements.txt
 python scripts/gen_parity_cases.py && (cd simulation/caar-logic &&   g++ -std=c++17 -O2 -o test_caar_logic test_caar_logic.cpp && ./test_caar_logic)
 python scripts/gen_waypoints.py
-python scripts/fit_channel.py --tx-power 16 --rx-sensitivity -82
+python scripts/fit_channel.py              # WiFi 20 dBm / -88 dBm, tầm ~29 m
 python scripts/wan_probe.py --url https://<tên-miền>/optimize --interval 2 --hours 24 --out contracts/wan_trace.csv
 NS3_DIR=~/ns-3-dev scripts/run_batch.sh s1 s2a s2b
 python scripts/import_ns3_results.py --db results/results.db

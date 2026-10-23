@@ -17,6 +17,13 @@ Versioning theo kế hoạch: `v0.1-alpha` → `v0.3-beta` → `v0.6` → `v1.0-
 - `scripts/check_ns3.py`: kiểm tra mục 14.3; CI job `ns3` build ns-3 và chạy kiểm tra này
 - `run_batch.sh` gọi chương trình `caar`, truyền `--speed`, chỉ truyền `--wan-trace` khi đã có trace
 - `ruff.toml`, pin `ruff==0.17.1` trong CI
+- NetAnim: `caar --netanim=<xml>` (robot đổi màu theo pin, Gateway theo mức hạ cấp); module `netanim` trong build
+
+### Changed
+
+- Radio mặc định WiFi 20 dBm / −88 dBm (tầm ~29 m) thay cho 16 / −82 dBm (~18 m): ở 18 m, 10 robot chỉ có
+  đường về Gateway ~19 % thời gian (lý do chi tiết: `docs/testing-report.md`, mục 14.3)
+- `caar` đặt ngưỡng phát hiện preamble bằng độ nhạy thu (ns-3 mặc định chặn ở −82 dBm), từ chối độ nhạy < −90 dBm
 
 ### Added — phần Owner B theo tài liệu đồ án bản cập nhật (20/10/2026)
 
