@@ -14,8 +14,8 @@ NS_LOG_COMPONENT_DEFINE ("CaarSimulation");
 
 int main (int argc, char *argv[])
 {
-  uint32_t numRobots = 10;
-  double simTime = 900.0; 
+  uint32_t numRobots = 3;
+  double simTime = 300.0;
   uint32_t seed = 1;
   std::string config = "no_cloud";
 
@@ -52,14 +52,35 @@ int main (int argc, char *argv[])
   wifi.SetStandard (WIFI_STANDARD_80211g);
   NetDeviceContainer devices = wifi.Install (phy, mac, allNodes);
 
-  // 3. Mobility (Gateway cố định, Robot dùng Waypoint)
+// 3. Mobility (Gateway cố định, Robot dùng Waypoint)
   MobilityHelper mobility;
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   mobility.Install (gatewayNode);
   
-  // Tạm gán Waypoint rỗng, sẽ add logic tọa độ hàng ray chi tiết sau
   mobility.SetMobilityModel ("ns3::WaypointMobilityModel");
   mobility.Install (robotNodes);
+
+  Ptr<UniformRandomVariable> pauseTime = CreateObject<UniformRandomVariable> ();
+  pauseTime->SetAttribute ("Min", DoubleValue (15.0));
+  pauseTime->SetAttribute ("Max", DoubleValue (24.0));
+
+  for (uint32_t i = 0; i < robotNodes.GetN (); ++i) {
+    Ptr<WaypointMobilityModel> waypoints = robotNodes.Get (i)->GetObject<WaypointMobilityModel> ();
+    double y_row = 3.3 * (i + 1); // Chia đều 3 hàng ray trong nhà kính 10m
+
+    // T = 0s: Xuất phát
+    waypoints->AddWaypoint (Waypoint (Seconds (0.0), Vector (0.0, y_row, 0.0)));
+    
+    // T = 100s: Đi 20m với vận tốc 0.2 m/s
+    waypoints->AddWaypoint (Waypoint (Seconds (100.0), Vector (20.0, y_row, 0.0)));
+    
+    // Dừng làm việc 15-24s
+    double pTime = pauseTime->GetValue();
+    waypoints->AddWaypoint (Waypoint (Seconds (100.0 + pTime), Vector (20.0, y_row, 0.0)));
+    
+    // Quay lại gốc
+    waypoints->AddWaypoint (Waypoint (Seconds (200.0 + pTime), Vector (0.0, y_row, 0.0)));
+  }
 
 // 4. Pin (Phân phối đều 20% - 100%)
   ns3::energy::EnergySourceContainer sources;
@@ -108,6 +129,27 @@ int main (int argc, char *argv[])
   Simulator::Stop (Seconds (simTime));
   Simulator::Run ();
   monitor->SerializeToXmlFile ("caar-flowmon.xml", true, true);
+  
+  // Lọc FlowMonitor để chỉ tính luồng dữ liệu UDP của ứng dụng
+  monitor->CheckForLostPackets ();
+  Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowmon.GetClassifier ());
+  std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats ();
+  
+  uint32_t txUdp = 0, rxUdp = 0;
+  for (auto const &stat : stats) {
+    Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow (stat.first);
+    // Chỉ đếm các gói có đích đến là cổng UDP 9, bỏ qua AODV spam
+    if (t.destinationPort == port) { 
+      txUdp += stat.second.txPackets;
+      rxUdp += stat.second.rxPackets;
+    }
+  }
+  
+  std::cout << "--- KẾT QUẢ MÔ PHỎNG (Luồng UDP - Cấu hình " << config << ") ---\n";
+  std::cout << "Tổng gói UDP gửi (Tx): " << txUdp << "\n";
+  std::cout << "Tổng gói UDP nhận (Rx): " << rxUdp << "\n";
+  std::cout << "PDR: " << (txUdp > 0 ? (rxUdp * 100.0 / txUdp) : 0) << " %\n";
+  
   Simulator::Destroy ();
   
   return 0;
