@@ -5,7 +5,8 @@
 #   NS3_DIR=~/ns-3-dev scripts/run_batch.sh all
 #   scripts/run_batch.sh --dry-run all                       # chỉ in lệnh
 #
-# Kịch bản: s1 (baseline), s2a (outage), s2b (stale), s3 (scale), sens (sensitivity), all.
+# Kịch bản: s1 (baseline), s2a (outage), s2b (stale), s3 (scale), sens (sensitivity),
+#           diag (destonly: chỉ Gateway trả lời RREQ), all.
 # Mỗi run ghi results/raw/<config>_<scenario>[_<biến thể>]_<seed>.csv; run đã có file thì bỏ qua,
 # nên chạy lại sau khi bị ngắt sẽ tiếp tục từ chỗ dừng.
 #
@@ -116,10 +117,20 @@ sens() {  # Độ nhạy: D_max 5, 10, 20 ms; tốc độ 0,2 và 1 m/s
   done
 }
 
+diag() {  # Chẩn đoán Q1: chỉ Gateway trả lời RREQ, để delayed RREQ quyết định đường đi
+  for seed in $SEEDS; do
+    for nodes in 10 20; do
+      for config in no_cloud local_optimized; do
+        run "$config" destonly "n$nodes" "$seed" "$nodes" "" 0.2 --ttl=60 --dmax=20 --destination-only=1
+      done
+    done
+  done
+}
+
 for target in "$@"; do
   case "$target" in
-    s1|s2a|s2b|s3|sens) "$target" ;;
-    all) s1; s2a; s2b; s3; sens ;;
+    s1|s2a|s2b|s3|sens|diag) "$target" ;;
+    all) s1; s2a; s2b; s3; sens; diag ;;
     *) echo "unknown scenario: $target" >&2; exit 1 ;;
   esac
 done

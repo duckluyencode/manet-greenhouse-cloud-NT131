@@ -274,7 +274,80 @@ def hypotheses(runs) -> str:
         f"Ghi chú: Q3 so sánh {q3_note}.",
         "Mọi kết quả, kể cả bác bỏ giả thuyết, được báo cáo trung thực.",
     ]
+    lines += mechanism_section(runs)
     return "\n".join(lines) + "\n"
+
+
+def _cell(vals: list[float], fmt: str = ".3f") -> str:
+    if not vals:
+        return "—"
+    s = summarize(vals)
+    ci = "" if s.n < 2 else f" ± {s.ci_half:{fmt}}"
+    return f"{s.mean:{fmt}}{ci}"
+
+
+def _p(a: list[float], b: list[float]) -> str:
+    return f"{welch_t_test(a, b).p:.3f}" if len(a) > 1 and len(b) > 1 else "—"
+
+
+def mechanism_section(runs) -> list[str]:
+    """Bằng chứng cơ chế: gói mất vì đâu, đường đi ra sao, ai chuyển tiếp (S1, S3, chẩn đoán)."""
+    cols = [("pdr", ".3f"), ("loss_no_route_ratio", ".3f"), ("hops_avg", ".2f"),
+            ("link_rssi_avg_dbm", ".1f"), ("weak_relay_share", ".3f")]
+    out = [
+        "",
+        "## Cơ chế định tuyến — S1 (10 robot, 1 ha)",
+        "",
+        "| Cấu hình | PDR | Mất do không có đường | Số hop | RSSI link chở dữ liệu (dBm) "
+        "| Chuyển tiếp bởi robot pin < 30 % |",
+        "|---|---|---|---|---|---|",
+    ]
+    for config in CONFIGS:
+        cells = [_cell(values(runs, c, scenario="baseline", config_type=config), f) for c, f in cols]
+        if any(c != "—" for c in cells):
+            out.append(f"| {config} | " + " | ".join(cells) + " |")
+
+    scale_ns = sorted({r["node_count"] for r in runs if r["scenario"] == "scale"})
+    if scale_ns:
+        out += [
+            "",
+            "## S3 — lợi ích của metric theo mật độ robot",
+            "",
+            "| Robot / 1 ha | PDR no_cloud | PDR local_optimized | Welch p | Mất do không có đường (no_cloud) |",
+            "|---|---|---|---|---|",
+        ]
+        for n in scale_ns:
+            a = values(runs, "pdr", scenario="scale", config_type="no_cloud", node_count=n)
+            b = values(runs, "pdr", scenario="scale", config_type="local_optimized", node_count=n)
+            nr = values(runs, "loss_no_route_ratio", scenario="scale", config_type="no_cloud", node_count=n)
+            out.append(f"| {n} | {_cell(a)} | {_cell(b)} | {_p(b, a)} | {_cell(nr)} |")
+
+    diag_ns = sorted({r["node_count"] for r in runs if r["scenario"] == "destonly"})
+    if diag_ns:
+        out += [
+            "",
+            "## Chẩn đoán Q1 — chỉ Gateway trả lời RREQ (AODV DestinationOnly)",
+            "",
+            "Giả thuyết kiểm tra: mặc định AODV cho node trung gian đã có đường trả lời RREQ ngay,",
+            "nên delayed RREQ ít khi quyết định đường đi. Kịch bản này buộc RREQ phải tới Gateway;",
+            "nếu PDR vẫn không khác, giả thuyết bị bác bỏ.",
+            "",
+            "| Robot | Cấu hình | PDR | Số hop | Chuyển tiếp bởi robot pin < 30 % | Thời gian tìm đường (ms) |",
+            "|---|---|---|---|---|---|",
+        ]
+        for n in diag_ns:
+            for config in ("no_cloud", "local_optimized"):
+                w = {"scenario": "destonly", "config_type": config, "node_count": n}
+                out.append(
+                    f"| {n} | {config} | {_cell(values(runs, 'pdr', **w))} | "
+                    f"{_cell(values(runs, 'hops_avg', **w), '.2f')} | "
+                    f"{_cell(values(runs, 'weak_relay_share', **w))} | "
+                    f"{_cell(values(runs, 'route_discovery_ms', **w), '.0f')} |"
+                )
+            a = values(runs, "pdr", scenario="destonly", config_type="no_cloud", node_count=n)
+            b = values(runs, "pdr", scenario="destonly", config_type="local_optimized", node_count=n)
+            out.append(f"| {n} | Welch p (PDR) | {_p(b, a)} | | | |")
+    return out
 
 
 def main() -> None:

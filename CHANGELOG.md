@@ -21,10 +21,14 @@ Versioning theo kế hoạch: `v0.1-alpha` → `v0.3-beta` → `v0.6` → `v1.0-
   Cama-Pinto), lối chính ở giữa, 112 hàng ray hai phía dài 47,5 m, Gateway ở (50; 50)
 - 4 cột đo cơ chế định tuyến: `loss_no_route_ratio`, `hops_avg`, `link_rssi_avg_dbm`, `weak_relay_share`;
   biểu đồ phân rã mất gói (giao / không có đường / mất trên link)
+- `caar --destination-only` và kịch bản `run_batch.sh diag` (chẩn đoán Q1: chỉ Gateway trả lời RREQ);
+  `hypotheses.md` thêm bảng cơ chế S1, lợi ích theo mật độ S3 và kết quả chẩn đoán
 - NetAnim: `caar --netanim=<xml>` (robot đổi màu theo pin, Gateway theo mức hạ cấp); module `netanim` trong build
 
 ### Changed
 
+- Build ns-3 bằng profile `release` thay cho `optimized` (bỏ `-march=native`): CI chết với SIGILL vì
+  ccache lấy lại file biên dịch cho CPU khác; kết quả giờ tái tạo được trên mọi máy x86-64
 - Radio mặc định WiFi 20 dBm / −88 dBm (tầm ~29 m) thay cho 16 / −82 dBm (~18 m): ở 18 m, 10 robot chỉ có
   đường về Gateway ~19 % thời gian (lý do chi tiết: `docs/testing-report.md`, mục 14.3)
 - `caar` đặt ngưỡng phát hiện preamble bằng độ nhạy thu (ns-3 mặc định chặn ở −82 dBm), từ chối độ nhạy < −90 dBm

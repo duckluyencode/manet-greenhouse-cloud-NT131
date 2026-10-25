@@ -721,6 +721,7 @@ main(int argc, char* argv[])
     std::string outPath;
     std::string fixedWeights;
     std::string netanimPath;
+    bool destinationOnly = false;
     double netanimStart = 0;
     double netanimStop = -1;
 
@@ -750,6 +751,9 @@ main(int argc, char* argv[])
     cmd.AddValue("drain-move", "Hao pin khi di chuyển (%/s)", g_drainMovePctPerS);
     cmd.AddValue("drain-tx", "Hao pin mỗi gói IP phát (%)", g_drainTxPct);
     cmd.AddValue("netanim", "Ghi trace NetAnim ra file XML (trống = tắt)", netanimPath);
+    cmd.AddValue("destination-only",
+                 "Chỉ đích trả lời RREQ (AODV DestinationOnly); mặc định node trung gian có đường cũng trả lời",
+                 destinationOnly);
     cmd.AddValue("netanim-start", "Bắt đầu ghi gói tin cho NetAnim (s)", netanimStart);
     cmd.AddValue("netanim-stop", "Dừng ghi gói tin cho NetAnim (s), âm = tới cuối", netanimStop);
     cmd.Parse(argc, argv);
@@ -905,6 +909,7 @@ main(int argc, char* argv[])
 
     // --- IP + AODV ---------------------------------------------------------------
     AodvHelper aodv;
+    aodv.Set("DestinationOnly", BooleanValue(destinationOnly));
     InternetStackHelper stack;
     stack.SetRoutingHelper(aodv);
     stack.Install(all);
@@ -1060,6 +1065,10 @@ main(int argc, char* argv[])
     if (!fixedWeights.empty())
     {
         params << ", \"fixed_weights\": \"" << fixedWeights << "\"";
+    }
+    if (destinationOnly)
+    {
+        params << ", \"destination_only\": true";
     }
     params << ", \"wan_model\": \"" << wanModel << "\"";
     params << ", \"window_s\": [" << Num(g_windowStart) << ", " << Num(g_windowEnd) << "]";
