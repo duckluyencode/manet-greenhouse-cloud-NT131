@@ -34,6 +34,7 @@ COLUMNS = [
     "config_type", "scenario", "seed", "node_count", "mobility_speed", "params",
     "pdr", "avg_delay_ms", "p95_delay_ms", "overhead_ratio", "route_discovery_ms",
     "min_energy_pct", "cloud_bandwidth_bytes",
+    "loss_no_route_ratio", "hops_avg", "link_rssi_avg_dbm", "weak_relay_share",
 ]
 
 failures: list[str] = []
@@ -83,6 +84,12 @@ def check_row(row: dict, config: str) -> None:
     check((cloud_bytes > 0) == (config == "cloud_assisted"),
           f"{config}: cloud_bandwidth_bytes {cloud_bytes} only for cloud_assisted")
     check(params.get("pdr_window") is not None, f"{config}: params.pdr_window present")
+    no_route = float(row["loss_no_route_ratio"])
+    check(0 <= no_route <= 1 - pdr + 1e-9, f"{config}: no-route loss {no_route:.3f} within total loss")
+    check(float(row["hops_avg"]) >= 1, f"{config}: hops_avg >= 1")
+    check(-90 <= float(row["link_rssi_avg_dbm"]) <= 0, f"{config}: link RSSI above sensitivity")
+    check(row["weak_relay_share"] == "" or 0 <= float(row["weak_relay_share"]) <= 1,
+          f"{config}: weak_relay_share in [0, 1]")
 
 
 def read_events(path: Path) -> list[dict]:

@@ -50,6 +50,10 @@ METRICS = {
     "route_discovery_ms": ("Độ trễ tìm đường", "ms"),
     "min_energy_pct": ("Pin thấp nhất cuối run", "%"),
     "cloud_bandwidth_bytes": ("Băng thông cloud", "byte"),
+    "loss_no_route_ratio": ("Mất gói do không có đường", "tỷ lệ"),
+    "hops_avg": ("Số hop trung bình", "hop"),
+    "link_rssi_avg_dbm": ("RSSI link chở dữ liệu", "dBm"),
+    "weak_relay_share": ("Chuyển tiếp bởi robot pin < 30 %", "tỷ lệ"),
 }
 
 
@@ -165,6 +169,49 @@ def line_chart(runs, scenario, metric, xkey, xlabel, configs, title, out: Path, 
     return True
 
 
+# Phần của tổng: giao được / mất vì không có đường / mất trên link (gồm cả va chạm, hàng đợi).
+LOSS_PARTS = [
+    ("Giao tới Gateway", "#008300"),
+    ("Mất: không có đường", "#e87ba4"),
+    ("Mất trên link", "#6250d6"),
+]
+
+
+def loss_breakdown_chart(runs, groups, title, out: Path) -> bool:
+    """Cột chồng 100 %: mỗi nhóm là (nhãn, điều kiện lọc runs)."""
+    labels, parts = [], []
+    for label, where in groups:
+        pdr = values(runs, "pdr", **where)
+        no_route = values(runs, "loss_no_route_ratio", **where)
+        if not pdr or len(no_route) != len(pdr):
+            continue
+        p, nr = summarize(pdr).mean, summarize(no_route).mean
+        labels.append(label)
+        parts.append((p, nr, max(0.0, 1 - p - nr)))
+    if not labels:
+        return False
+    fig, ax = new_figure()
+    bottoms = [0.0] * len(labels)
+    for k, (name, color) in enumerate(LOSS_PARTS):
+        heights = [part[k] for part in parts]
+        ax.bar(range(len(labels)), heights, bottom=bottoms, width=0.6, color=color,
+               edgecolor=SURFACE, linewidth=2, label=name)
+        for i, h in enumerate(heights):
+            if h >= 0.06:
+                ax.text(i, bottoms[i] + h / 2, f"{h:.0%}", ha="center", va="center",
+                        color=SURFACE, fontsize=8)
+        bottoms = [b + h for b, h in zip(bottoms, heights)]
+    ax.set_xticks(range(len(labels)), labels, color=TEXT_MUTED)
+    ax.set_ylim(0, 1)
+    style_axes(ax, title, "Tỷ lệ gói gửi")
+    ax.legend(frameon=False, labelcolor=TEXT_MUTED, fontsize=8, loc="upper center",
+              bbox_to_anchor=(0.5, -0.12), ncol=3)
+    fig.tight_layout()
+    fig.savefig(out, facecolor=SURFACE)
+    plt.close(fig)
+    return True
+
+
 def verdict_line(qid, claim, a_name, a, b_name, b, expect) -> str:
     """expect: 'greater' (a > b có ý nghĩa), 'not_lower' (a không thấp hơn b), 'same'."""
     if not a or not b:
@@ -249,7 +296,15 @@ def main() -> None:
     if line_chart(runs, "stale", "pdr", "p_ttl_s", "TTL (s)", ["cloud_assisted"],
                   "S2b – PDR theo TTL", args.out / "s2b_pdr_vs_ttl.png", summary_rows):
         made.append("s2b_pdr_vs_ttl.png")
-    for metric in ("pdr", "cloud_bandwidth_bytes"):
+    if loss_breakdown_chart(runs, [(c, {"scenario": "baseline", "config_type": c}) for c in CONFIGS],
+                            "S1 – Gói tin đi đâu (trung bình 10 seed)", args.out / "s1_loss_breakdown.png"):
+        made.append("s1_loss_breakdown.png")
+    if loss_breakdown_chart(runs, [(f"{n} robot", {"scenario": "scale", "config_type": "no_cloud",
+                                                   "node_count": n}) for n in (6, 10, 16, 20)],
+                            "S3 – Gói tin đi đâu theo số robot (AODV gốc)",
+                            args.out / "s3_loss_breakdown.png"):
+        made.append("s3_loss_breakdown.png")
+    for metric in ("pdr", "cloud_bandwidth_bytes", "loss_no_route_ratio", "hops_avg", "weak_relay_share"):
         name, _ = METRICS[metric]
         if line_chart(runs, "scale", metric, "node_count", "Số robot", CONFIGS,
                       f"S3 – {name} theo số robot", args.out / f"s3_{metric}.png", summary_rows):

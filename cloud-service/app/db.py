@@ -25,6 +25,10 @@ METRIC_COLUMNS = (
     "route_discovery_ms",
     "min_energy_pct",
     "cloud_bandwidth_bytes",
+    "loss_no_route_ratio",
+    "hops_avg",
+    "link_rssi_avg_dbm",
+    "weak_relay_share",
 )
 
 _SCHEMA = """
@@ -46,7 +50,11 @@ CREATE TABLE IF NOT EXISTS metrics (
     overhead_ratio REAL,
     route_discovery_ms REAL,
     min_energy_pct REAL,
-    cloud_bandwidth_bytes INTEGER
+    cloud_bandwidth_bytes INTEGER,
+    loss_no_route_ratio REAL,    -- gói dữ liệu bỏ vì không có đường / gói gửi
+    hops_avg REAL,               -- số hop trung bình của gói tới Gateway
+    link_rssi_avg_dbm REAL,      -- RSSI trung bình các link đã chở dữ liệu
+    weak_relay_share REAL        -- tỷ lệ lượt chuyển tiếp do robot pin < 30 %
 );
 CREATE TABLE IF NOT EXISTS cloud_events (
     run_id INTEGER REFERENCES runs(id),
@@ -65,7 +73,14 @@ CREATE TABLE IF NOT EXISTS wan_trace (
 # Cột thêm so với bản cũ; DB tạo từ bản cũ được bổ sung khi init_db().
 _ADDED_COLUMNS = {
     "runs": {"params": "TEXT"},
-    "metrics": {"route_discovery_ms": "REAL", "min_energy_pct": "REAL"},
+    "metrics": {
+        "route_discovery_ms": "REAL",
+        "min_energy_pct": "REAL",
+        "loss_no_route_ratio": "REAL",
+        "hops_avg": "REAL",
+        "link_rssi_avg_dbm": "REAL",
+        "weak_relay_share": "REAL",
+    },
 }
 
 

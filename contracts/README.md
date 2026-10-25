@@ -32,7 +32,9 @@ lý do đổi khỏi 16 / −82 dBm ghi ở `docs/testing-report.md` (mục 14.3
 ## waypoints/
 
 Cột `node_id, t_s, x_m, y_m`; `node_id` = 1..N (robot `r<node_id>`), Gateway
-không có trong file (vị trí cố định trong `layout.json`: (50; 2,5)). Một lần
+không có trong file (vị trí cố định trong `layout.json`: (50; 50)). Nhà kính 1 ha
+(100 × 100 m), lối chính ở giữa, 112 hàng ray hai phía; lý do và nguồn số liệu ở
+`docs/greenhouse-survey.md`. Một lần
 dừng là hai dòng liên tiếp cùng tọa độ. Quỹ đạo kéo dài ít nhất 900 s.
 
 Có sẵn: N ∈ {6, 10, 16, 20} × seed 1..10 (tham số mặc định), và `10_<seed>_v1.csv`
@@ -50,8 +52,18 @@ khi không nhận được phản hồi.
 
 ```
 config_type,scenario,seed,node_count,mobility_speed,params,
-pdr,avg_delay_ms,p95_delay_ms,overhead_ratio,route_discovery_ms,min_energy_pct,cloud_bandwidth_bytes
+pdr,avg_delay_ms,p95_delay_ms,overhead_ratio,route_discovery_ms,min_energy_pct,cloud_bandwidth_bytes,
+loss_no_route_ratio,hops_avg,link_rssi_avg_dbm,weak_relay_share
 ```
+
+4 cột cuối đo cơ chế định tuyến (có thể trống ở kết quả cũ):
+
+| Cột | Ý nghĩa |
+|---|---|
+| `loss_no_route_ratio` | Gói dữ liệu bị bỏ vì không có / mất đường (AODV tìm đường thất bại) ÷ gói gửi. Phần mất còn lại `1 − pdr − loss_no_route_ratio` là mất trên link |
+| `hops_avg` | Số hop trung bình của gói tới Gateway (từ TTL) |
+| `link_rssi_avg_dbm` | RSSI trung bình các link đã chở dữ liệu (khung unicast nhận thành công) |
+| `weak_relay_share` | Tỷ lệ lượt chuyển tiếp gói dữ liệu do robot đang có pin < 30 % |
 
 - `config_type`: `no_cloud` | `local_optimized` | `gateway_heuristic` | `cloud_assisted`
 - `scenario`: `baseline` (S1) | `outage` (S2a) | `stale` (S2b) | `scale` (S3) | `sensitivity`

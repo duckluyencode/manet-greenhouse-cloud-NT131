@@ -79,6 +79,10 @@ constexpr double kRssiFreshSeconds = 10.0;
 constexpr double kUnknownRssiDbm = -90.0;
 // Độ nhạy thu thấp nhất chấp nhận: nhiễu nền kênh 22 MHz (~-94 dBm) + 4 dB SNR preamble.
 constexpr double kMinRxSensitivityDbm = -90.0;
+// Ngưỡng "robot yếu pin" khi đo ai chuyển tiếp gói (weak_relay_share).
+constexpr double kWeakBatteryPct = 30.0;
+// TTL robot gắn cho gói dữ liệu; Gateway suy ra số hop = kDataTtl + 1 - TTL nhận được.
+constexpr uint8_t kDataTtl = 64;
 
 struct LinkRssi
 {
@@ -151,6 +155,15 @@ uint64_t g_dataRxWindow = 0;
 uint64_t g_cloudBytes = 0;
 std::vector<double> g_delaysMs;
 std::vector<double> g_routeDiscoveryMs;
+
+// Phép đo cơ chế định tuyến (vì sao mất gói, đường được chọn ra sao, ai chuyển tiếp)
+uint64_t g_dataNoRouteDrops = 0; // gói dữ liệu bị bỏ vì không tìm được / mất đường
+std::vector<uint32_t> g_hops;    // số hop của gói dữ liệu tới Gateway
+double g_dataLinkRssiSum = 0;    // RSSI các khung dữ liệu unicast nhận thành công
+uint64_t g_dataLinkFrames = 0;
+uint64_t g_dataForwards = 0; // lượt robot chuyển tiếp gói dữ liệu
+uint64_t g_weakForwards = 0; // ... trong lúc pin robot dưới kWeakBatteryPct
+std::vector<Mac48Address> g_mac;
 std::vector<GatewayEvent> g_events;
 
 // ---------------------------------------------------------------------------
@@ -281,6 +294,62 @@ OnSnifferRx(uint32_t self,
     link.avgDbm = link.seen ? (1 - kRssiEwmaAlpha) * link.avgDbm + kRssiEwmaAlpha * sample : sample;
     link.seen = true;
     link.last = Simulator::Now();
+
+    // Link thật sự chở dữ liệu: khung unicast gửi cho chính node này, mang gói UDP cổng dữ liệu.
+    if (hdr.GetAddr1() == g_mac[self])
+    {
+        Ptr<Packet> copy = packet->Copy();
+        copy->RemoveHeader(hdr);
+        LlcSnapHeader llc;
+        Ipv4Header ip;
+        UdpHeader udp;
+        if (copy->RemoveHeader(llc) && llc.GetType() == Ipv4L3Protocol::PROT_NUMBER &&
+            copy->RemoveHeader(ip) && ip.GetProtocol() == UdpL4Protocol::PROT_NUMBER &&
+            copy->PeekHeader(udp) && udp.GetDestinationPort() == kDataPort)
+        {
+            g_dataLinkRssiSum += sample;
+            ++g_dataLinkFrames;
+        }
+    }
+}
+
+// Gói (không còn header IP) có phải gói dữ liệu robot -> Gateway không.
+bool
+IsDataPayload(const Ipv4Header& ip, Ptr<const Packet> payload)
+{
+    UdpHeader udp;
+    return ip.GetProtocol() == UdpL4Protocol::PROT_NUMBER && payload->PeekHeader(udp) &&
+           udp.GetDestinationPort() == kDataPort;
+}
+
+// Gói dữ liệu bị IPv4 bỏ vì không có đường: AODV tìm đường thất bại, hàng đợi chờ
+// đường quá hạn, hoặc node trung gian mất đường (đều đi qua DROP_ROUTE_ERROR / NO_ROUTE).
+void
+OnIpDrop(const Ipv4Header& ip,
+         Ptr<const Packet> payload,
+         Ipv4L3Protocol::DropReason reason,
+         Ptr<Ipv4> /*ipv4*/,
+         uint32_t /*iface*/)
+{
+    if ((reason == Ipv4L3Protocol::DROP_NO_ROUTE || reason == Ipv4L3Protocol::DROP_ROUTE_ERROR) &&
+        IsDataPayload(ip, payload))
+    {
+        ++g_dataNoRouteDrops;
+    }
+}
+
+void
+OnIpForward(uint32_t self, const Ipv4Header& ip, Ptr<const Packet> payload, uint32_t /*iface*/)
+{
+    if (self == 0 || !IsDataPayload(ip, payload))
+    {
+        return;
+    }
+    ++g_dataForwards;
+    if (g_energyPct[self] < kWeakBatteryPct)
+    {
+        ++g_weakForwards;
+    }
 }
 
 // RSSI trung bình của các liên kết robot còn nghe thấy (giá trị rssi_avg của telemetry).
@@ -440,6 +509,11 @@ OnGatewayRecv(Ptr<Socket> socket)
         double rssi = int32_t(GetU32(buf + 20)) / 100.0;
         Time txTime = NanoSeconds(txNs);
         g_delaysMs.push_back((Simulator::Now() - txTime).GetSeconds() * 1000);
+        SocketIpTtlTag ttl;
+        if (packet->RemovePacketTag(ttl))
+        {
+            g_hops.push_back(kDataTtl + 1 - ttl.GetTtl());
+        }
         if (InWindow(txTime.GetSeconds()))
         {
             ++g_dataRxWindow;
@@ -859,7 +933,8 @@ main(int argc, char* argv[])
     {
         g_ip.push_back(ifaces.GetAddress(i));
         g_ipToIdx[ifaces.GetAddress(i)] = i;
-        g_macToIdx[Mac48Address::ConvertFrom(devices.Get(i)->GetAddress())] = i;
+        g_mac.push_back(Mac48Address::ConvertFrom(devices.Get(i)->GetAddress()));
+        g_macToIdx[g_mac.back()] = i;
         if (i > 0)
         {
             g_energyPct[i] = energyRv->GetValue(20, 100); // mục 6.3: đều 20–100 %
@@ -868,9 +943,10 @@ main(int argc, char* argv[])
         Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice>(devices.Get(i));
         dev->GetPhy()->TraceConnectWithoutContext("MonitorSnifferRx",
                                                   MakeBoundCallback(&OnSnifferRx, i));
-        all.Get(i)->GetObject<Ipv4L3Protocol>()->TraceConnectWithoutContext(
-            "Tx",
-            MakeBoundCallback(&OnIpTx, i));
+        Ptr<Ipv4L3Protocol> ipv4 = all.Get(i)->GetObject<Ipv4L3Protocol>();
+        ipv4->TraceConnectWithoutContext("Tx", MakeBoundCallback(&OnIpTx, i));
+        ipv4->TraceConnectWithoutContext("Drop", MakeCallback(&OnIpDrop));
+        ipv4->TraceConnectWithoutContext("UnicastForward", MakeBoundCallback(&OnIpForward, i));
 
         Ptr<aodv::RoutingProtocol> routing =
             DynamicCast<aodv::RoutingProtocol>(all.Get(i)->GetObject<Ipv4>()->GetRoutingProtocol());
@@ -886,9 +962,11 @@ main(int argc, char* argv[])
     Ptr<Socket> sink = Socket::CreateSocket(all.Get(0), UdpSocketFactory::GetTypeId());
     sink->Bind(InetSocketAddress(Ipv4Address::GetAny(), kDataPort));
     sink->SetRecvCallback(MakeCallback(&OnGatewayRecv));
+    sink->SetIpRecvTtl(true); // để đếm số hop của gói tới Gateway
     for (uint32_t i = 1; i <= nodes; ++i)
     {
         g_robotSockets[i] = Socket::CreateSocket(all.Get(i), UdpSocketFactory::GetTypeId());
+        g_robotSockets[i]->SetIpTtl(kDataTtl);
         g_robotSockets[i]->Connect(InetSocketAddress(g_ip[0], kDataPort));
         Simulator::Schedule(g_appStart + Seconds(startRv->GetValue(0, 1)), &SendTelemetry, i);
     }
@@ -957,6 +1035,19 @@ main(int argc, char* argv[])
     }
     double minEnergy = *std::min_element(g_energyPct.begin() + 1, g_energyPct.end());
     double pdrWindow = g_dataTxWindow ? double(g_dataRxWindow) / g_dataTxWindow : NAN;
+    double lossNoRoute = txPackets ? double(g_dataNoRouteDrops) / txPackets : NAN;
+    double hopsAvg = NAN;
+    if (!g_hops.empty())
+    {
+        double s = 0;
+        for (uint32_t h : g_hops)
+        {
+            s += h;
+        }
+        hopsAvg = s / g_hops.size();
+    }
+    double linkRssi = g_dataLinkFrames ? g_dataLinkRssiSum / g_dataLinkFrames : NAN;
+    double weakRelayShare = g_dataForwards ? double(g_weakForwards) / g_dataForwards : NAN;
 
     std::ostringstream params;
     params << "{\"dmax_ms\": " << Num(dmaxMs) << ", \"jitter_ms\": " << Num(jitterMs)
@@ -978,10 +1069,13 @@ main(int argc, char* argv[])
     row << config << "," << scenario << "," << seed << "," << nodes << "," << Num(speed) << ","
         << CsvQuote(params.str()) << "," << NumOrEmpty(pdr) << "," << NumOrEmpty(avgDelayMs) << ","
         << NumOrEmpty(p95DelayMs) << "," << NumOrEmpty(overhead) << ","
-        << NumOrEmpty(routeDiscoveryMs) << "," << NumOrEmpty(minEnergy) << "," << g_cloudBytes;
+        << NumOrEmpty(routeDiscoveryMs) << "," << NumOrEmpty(minEnergy) << "," << g_cloudBytes << ","
+        << NumOrEmpty(lossNoRoute) << "," << NumOrEmpty(hopsAvg) << "," << NumOrEmpty(linkRssi) << ","
+        << NumOrEmpty(weakRelayShare);
     const std::string header =
         "config_type,scenario,seed,node_count,mobility_speed,params,pdr,avg_delay_ms,p95_delay_ms,"
-        "overhead_ratio,route_discovery_ms,min_energy_pct,cloud_bandwidth_bytes";
+        "overhead_ratio,route_discovery_ms,min_energy_pct,cloud_bandwidth_bytes,"
+        "loss_no_route_ratio,hops_avg,link_rssi_avg_dbm,weak_relay_share";
 
     if (outPath.empty())
     {
@@ -1005,7 +1099,9 @@ main(int argc, char* argv[])
     }
     std::cout << config << " seed=" << seed << " pdr=" << Num(pdr, 4) << " delay_ms="
               << Num(avgDelayMs, 4) << " overhead=" << Num(overhead, 4)
-              << " route_discovery_ms=" << Num(routeDiscoveryMs, 4) << " events=" << g_events.size()
+              << " route_discovery_ms=" << Num(routeDiscoveryMs, 4) << " no_route=" << Num(lossNoRoute, 3)
+              << " hops=" << Num(hopsAvg, 3) << " weak_relay=" << Num(weakRelayShare, 3)
+              << " events=" << g_events.size()
               << std::endl;
 
     Simulator::Destroy();

@@ -17,6 +17,10 @@ Versioning theo kế hoạch: `v0.1-alpha` → `v0.3-beta` → `v0.6` → `v1.0-
 - `scripts/check_ns3.py`: kiểm tra mục 14.3; CI job `ns3` build ns-3 và chạy kiểm tra này
 - `run_batch.sh` gọi chương trình `caar`, truyền `--speed`, chỉ truyền `--wan-trace` khi đã có trace
 - `ruff.toml`, pin `ruff==0.17.1` trong CI
+- Môi trường 1 ha theo khảo sát `docs/greenhouse-survey.md`: 100 × 100 m (bằng nhà kính đo kênh
+  Cama-Pinto), lối chính ở giữa, 112 hàng ray hai phía dài 47,5 m, Gateway ở (50; 50)
+- 4 cột đo cơ chế định tuyến: `loss_no_route_ratio`, `hops_avg`, `link_rssi_avg_dbm`, `weak_relay_share`;
+  biểu đồ phân rã mất gói (giao / không có đường / mất trên link)
 - NetAnim: `caar --netanim=<xml>` (robot đổi màu theo pin, Gateway theo mức hạ cấp); module `netanim` trong build
 
 ### Changed

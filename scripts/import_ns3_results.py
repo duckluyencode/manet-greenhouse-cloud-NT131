@@ -5,7 +5,9 @@ Mỗi file results/raw/*.csv (trừ wan_trace.csv và *_events.csv) có một ho
 nhiều dòng với các cột:
     config_type, scenario, seed, node_count, mobility_speed, params,
     pdr, avg_delay_ms, p95_delay_ms, overhead_ratio, route_discovery_ms,
-    min_energy_pct, cloud_bandwidth_bytes
+    min_energy_pct, cloud_bandwidth_bytes,
+    loss_no_route_ratio, hops_avg, link_rssi_avg_dbm, weak_relay_share
+4 cột cuối (đo cơ chế định tuyến) có thể thiếu ở kết quả cũ; khi đó ghi NULL.
 params là chuỗi JSON (ví dụ {"dmax_ms": 20, "ttl_s": 60}). Script đọc thông
 tin run từ nội dung file, không dựa vào tên file.
 
@@ -30,6 +32,8 @@ from app import db  # noqa: E402
 
 RUN_COLUMNS = ("config_type", "scenario", "seed", "node_count", "mobility_speed", "params")
 CONFIGS = {"no_cloud", "local_optimized", "gateway_heuristic", "cloud_assisted"}
+# Cột thêm sau, không bắt buộc với file kết quả cũ.
+OPTIONAL_METRICS = ("loss_no_route_ratio", "hops_avg", "link_rssi_avg_dbm", "weak_relay_share")
 
 
 def _num(value: str) -> float | None:
@@ -37,7 +41,8 @@ def _num(value: str) -> float | None:
 
 
 def parse_row(row: dict[str, str], source: Path) -> tuple[dict, dict]:
-    missing = [c for c in RUN_COLUMNS + db.METRIC_COLUMNS if c not in row]
+    required = [c for c in RUN_COLUMNS + db.METRIC_COLUMNS if c not in OPTIONAL_METRICS]
+    missing = [c for c in required if c not in row]
     if missing:
         raise ValueError(f"{source}: missing columns {missing}")
     if row["config_type"] not in CONFIGS:
@@ -50,7 +55,7 @@ def parse_row(row: dict[str, str], source: Path) -> tuple[dict, dict]:
         "mobility_speed": float(row["mobility_speed"]),
         "params": json.loads(row["params"] or "{}"),
     }
-    metrics = {c: _num(row[c]) for c in db.METRIC_COLUMNS}
+    metrics = {c: _num(row.get(c)) for c in db.METRIC_COLUMNS}
     if metrics["cloud_bandwidth_bytes"] is not None:
         metrics["cloud_bandwidth_bytes"] = int(metrics["cloud_bandwidth_bytes"])
     if metrics["pdr"] is not None and not 0 <= metrics["pdr"] <= 1:

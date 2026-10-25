@@ -53,11 +53,14 @@ Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400
   còn robot dùng WiFi (mục 1.1, 5.4). Ở 18 m, với 10 robot chỉ ~19 % thời gian robot có đường
   về Gateway (PDR mô phỏng 0,14–0,23), nên Q1–Q3 gần như không đo được. Ở 29 m là ~82 %.
   Độ nhạy thấp hơn −90 dBm làm PHY của ns-3.48 dừng ("Invalid WifiPhy state RX").
-- [x] Mọi waypoint nằm trên lối chính hoặc hàng ray, trong 100 × 50 m (`gen_waypoints.validate`, test).
+- [x] Mọi waypoint nằm trên lối chính hoặc hàng ray, trong nhà kính 1 ha 100 × 100 m
+  (`gen_waypoints.validate`, test). Lý do chọn 1 ha: `docs/greenhouse-survey.md`.
 - [x] Log mất cloud theo thứ tự outage_start → stale_detected (357 s, TTL 60 s) → outage_end;
   không có param_update trong lúc mất cloud.
 - [x] Cùng seed chạy hai lần cho kết quả giống hệt.
 - [x] 4 cấu hình chạy được, CSV đúng hợp đồng, nhập được vào SQLite; NetAnim ghi đủ 3 mức Gateway.
+- [x] Phép đo cơ chế hợp lệ: mất gói do không có đường ≤ tổng mất gói, số hop ≥ 1,
+  RSSI link chở dữ liệu ≥ độ nhạy thu.
 
 ## Chạy test
 
