@@ -123,7 +123,11 @@ def test_rail_speed_is_respected() -> None:
     track = gen_waypoints.generate(10, 2, p)[1]
     for a, b in zip(track.points, track.points[1:]):
         dist = math.hypot(b[1] - a[1], b[2] - a[2])
-        if dist > 0 and b[2] > gen_waypoints.AISLE_WIDTH and a[2] >= gen_waypoints.AISLE_WIDTH:
+        # Đoạn trên ray: cùng x, hai đầu cùng một phía và không vào trong lối chính.
+        da, db = a[2] - gen_waypoints.AISLE_Y, b[2] - gen_waypoints.AISLE_Y
+        half = gen_waypoints.AISLE_WIDTH / 2 - 1e-9
+        on_rail = a[1] == b[1] and da * db > 0 and min(abs(da), abs(db)) >= half
+        if dist > 0 and on_rail:
             assert dist / (b[0] - a[0]) == pytest.approx(p.rail_speed)
 
 
@@ -146,9 +150,10 @@ def _write_result(path: Path, config, scenario, seed, pdr, params) -> None:
             "config_type", "scenario", "seed", "node_count", "mobility_speed", "params",
             "pdr", "avg_delay_ms", "p95_delay_ms", "overhead_ratio", "route_discovery_ms",
             "min_energy_pct", "cloud_bandwidth_bytes",
+            "loss_no_route_ratio", "hops_avg", "link_rssi_avg_dbm", "weak_relay_share",
         ])
         w.writerow([config, scenario, seed, 10, 0.2, json.dumps(params),
-                    pdr, 12.0, 30.0, 0.1, 45.0, 22.0, 1000])
+                    pdr, 12.0, 30.0, 0.1, 45.0, 22.0, 1000, 0.05, 1.8, -70.0, 0.1])
 
 
 def test_import_and_plot_pipeline(tmp_path) -> None:

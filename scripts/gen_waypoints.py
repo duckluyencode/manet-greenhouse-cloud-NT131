@@ -1,15 +1,19 @@
 """
 Sinh quỹ đạo robot "vào hàng ray -> đi và dừng làm việc -> quay ra" (mục 6.2).
 
-Bố trí nhà kính 100 × 50 m (trục x dọc cạnh dài):
-- Lối chính: dải y ∈ [0; AISLE_WIDTH], robot chạy trên đường tâm y = AISLE_Y.
-- Hàng ray: vuông góc lối chính, x = 0,9 + 1,8·k, từ y = AISLE_WIDTH tới
-  AISLE_WIDTH + RAIL_LENGTH (45 m).
-- Gateway cố định ở giữa lối chính (50; AISLE_Y).
+Bố trí nhà kính 1 ha, 100 × 100 m (docs/greenhouse-survey.md):
+- Lối chính 100 m chạy dọc giữa nhà: dải y ∈ [47,5; 52,5], robot chạy trên đường
+  tâm y = 50. Nhà kính đo kênh của Cama-Pinto (2019) rộng 10.000 m², hành lang
+  chính 100 m.
+- Hàng ray vuông góc lối chính ở cả hai phía, x = 0,9 + 1,8·k (bước 1,8 m =
+  lối đi 1,2 m + hàng đôi 0,6 m), mỗi hàng dài 47,5 m: phía bắc từ y = 52,5 tới
+  100, phía nam từ y = 47,5 về 0. Tổng 112 hàng.
+- Gateway cố định ở giữa lối chính (50; 50).
 
-Mỗi robot phụ trách một dải hàng ray liền nhau. Trong một hàng: đi vào với tốc
-độ ray, cứ k mét dừng U(15; 24) s; tới cuối hàng thì lùi ra (không dừng), lên
-lối chính, sang hàng kế tiếp; hết dải thì quay về hàng đầu dải. Để robot không
+Mỗi robot phụ trách một dải hàng ray liền nhau (thứ tự hàng: phía bắc từ trái
+sang phải, rồi phía nam từ phải sang trái). Trong một hàng: đi vào với tốc độ
+ray, cứ k mét dừng U(15; 24) s; tới cuối hàng thì lùi ra (không dừng), lên lối
+chính, sang hàng kế tiếp; hết dải thì quay về hàng đầu dải. Để robot không
 cùng pha, mỗi robot bắt đầu ở một hàng ngẫu nhiên trong dải, tại một vị trí
 ngẫu nhiên đang đi vào hàng.
 
@@ -33,13 +37,16 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT_DIR = ROOT / "contracts" / "waypoints"
 
 GREENHOUSE_X = 100.0
-GREENHOUSE_Y = 50.0
+GREENHOUSE_Y = 100.0
 AISLE_WIDTH = 5.0
-AISLE_Y = AISLE_WIDTH / 2
-RAIL_LENGTH = 45.0
+AISLE_Y = GREENHOUSE_Y / 2  # đường tâm lối chính
+AISLE_Y_MIN = AISLE_Y - AISLE_WIDTH / 2
+AISLE_Y_MAX = AISLE_Y + AISLE_WIDTH / 2
+RAIL_LENGTH = AISLE_Y_MIN  # 47,5 m mỗi phía
 RAIL_SPACING = 1.8
 RAIL_FIRST_X = RAIL_SPACING / 2
-RAIL_COUNT = int((GREENHOUSE_X - RAIL_FIRST_X) // RAIL_SPACING) + 1  # 56 hàng
+RAILS_PER_SIDE = int((GREENHOUSE_X - RAIL_FIRST_X) // RAIL_SPACING) + 1  # 56 hàng
+RAIL_COUNT = 2 * RAILS_PER_SIDE  # 112 hàng
 GATEWAY = (GREENHOUSE_X / 2, AISLE_Y)
 
 # Sai số so sánh tọa độ khi kiểm tra waypoint nằm trên lối/ray.
@@ -81,8 +88,15 @@ class Track:
         self.points.append((self.t + seconds, x, y))
 
 
-def rail_x(index: int) -> float:
-    return RAIL_FIRST_X + RAIL_SPACING * index
+def rail_x(column: int) -> float:
+    return RAIL_FIRST_X + RAIL_SPACING * column
+
+
+def rail(index: int) -> tuple[float, float, int]:
+    """Hàng ray thứ index: (x, y ở mép lối chính, hướng đi vào: +1 bắc, -1 nam)."""
+    if index < RAILS_PER_SIDE:
+        return rail_x(index), AISLE_Y_MAX, 1
+    return rail_x(RAIL_COUNT - 1 - index), AISLE_Y_MIN, -1
 
 
 def rail_strips(n_robots: int) -> list[list[int]]:
@@ -96,37 +110,35 @@ def rail_strips(n_robots: int) -> list[list[int]]:
     return strips
 
 
-def work_rail(track: Track, x: float, start_depth: float, p: Params, rng: random.Random) -> None:
+def work_rail(track: Track, index: int, start_depth: float, p: Params, rng: random.Random) -> None:
     """Đi vào hàng từ độ sâu start_depth, dừng mỗi k mét, tới cuối rồi lùi ra lối chính."""
-    y_start = AISLE_WIDTH
-    depth = start_depth
+    x, y_edge, direction = rail(index)
     # Điểm dừng kế tiếp là bội số của k tính từ đầu hàng.
-    next_stop = (math.floor(depth / p.stop_every_m + EPS) + 1) * p.stop_every_m
+    next_stop = (math.floor(start_depth / p.stop_every_m + EPS) + 1) * p.stop_every_m
     while next_stop <= RAIL_LENGTH + EPS:
-        track.move_to(x, y_start + next_stop, p.rail_speed)
+        track.move_to(x, y_edge + direction * next_stop, p.rail_speed)
         track.wait(rng.uniform(p.stop_min_s, p.stop_max_s))
-        depth = next_stop
         next_stop += p.stop_every_m
         if track.t >= p.duration_s:
             return
-    track.move_to(x, y_start + RAIL_LENGTH, p.rail_speed)
-    track.move_to(x, y_start, p.rail_speed)  # lùi ra, không dừng
+    track.move_to(x, y_edge + direction * RAIL_LENGTH, p.rail_speed)
+    track.move_to(x, y_edge, p.rail_speed)  # lùi ra, không dừng
     track.move_to(x, AISLE_Y, p.aisle_speed)
 
 
 def robot_track(strip: list[int], p: Params, rng: random.Random) -> Track:
     pos_in_strip = rng.randrange(len(strip))
-    x = rail_x(strip[pos_in_strip])
     start_depth = rng.uniform(0, RAIL_LENGTH)
-    track = Track([(0.0, x, AISLE_WIDTH + start_depth)])
+    x, y_edge, direction = rail(strip[pos_in_strip])
+    track = Track([(0.0, x, y_edge + direction * start_depth)])
     while True:
-        work_rail(track, x, start_depth, p, rng)
+        work_rail(track, strip[pos_in_strip], start_depth, p, rng)
         if track.t >= p.duration_s:
             break
         pos_in_strip = (pos_in_strip + 1) % len(strip)
-        x = rail_x(strip[pos_in_strip])
+        x, y_edge, _ = rail(strip[pos_in_strip])
         track.move_to(x, AISLE_Y, p.aisle_speed)
-        track.move_to(x, AISLE_WIDTH, p.aisle_speed)
+        track.move_to(x, y_edge, p.aisle_speed)
         start_depth = 0.0
     return track
 
@@ -142,10 +154,14 @@ def on_layout(x: float, y: float) -> bool:
     """Waypoint phải nằm trên lối chính hoặc trên một hàng ray, trong nhà kính."""
     if not (-EPS <= x <= GREENHOUSE_X + EPS and -EPS <= y <= GREENHOUSE_Y + EPS):
         return False
-    if y <= AISLE_WIDTH + EPS:
+    if in_aisle(y):
         return True
     k = round((x - RAIL_FIRST_X) / RAIL_SPACING)
-    return 0 <= k < RAIL_COUNT and abs(rail_x(k) - x) < EPS and y <= AISLE_WIDTH + RAIL_LENGTH + EPS
+    return 0 <= k < RAILS_PER_SIDE and abs(rail_x(k) - x) < EPS
+
+
+def in_aisle(y: float) -> bool:
+    return AISLE_Y_MIN - EPS <= y <= AISLE_Y_MAX + EPS
 
 
 def validate(tracks: dict[int, Track], p: Params) -> None:
@@ -162,7 +178,7 @@ def validate(tracks: dict[int, Track], p: Params) -> None:
         for (_, x0, y0), (_, x1, y1) in pairwise(track.points):
             if abs(x1 - x0) > EPS and abs(y1 - y0) > EPS:
                 raise ValueError(f"robot {node_id}: diagonal move ({x0},{y0})->({x1},{y1})")
-            if abs(x1 - x0) > EPS and max(y0, y1) > AISLE_WIDTH + EPS:
+            if abs(x1 - x0) > EPS and not (in_aisle(y0) and in_aisle(y1)):
                 raise ValueError(f"robot {node_id}: lateral move outside main aisle")
 
 
@@ -179,13 +195,15 @@ def write_csv(path: Path, tracks: dict[int, Track]) -> None:
 def write_layout(out_dir: Path, p: Params) -> None:
     layout = {
         "greenhouse_m": [GREENHOUSE_X, GREENHOUSE_Y],
-        "aisle": {"y_min": 0.0, "y_max": AISLE_WIDTH, "path_y": AISLE_Y},
+        "aisle": {"y_min": AISLE_Y_MIN, "y_max": AISLE_Y_MAX, "path_y": AISLE_Y},
         "rails": {
             "count": RAIL_COUNT,
+            "per_side": RAILS_PER_SIDE,
             "first_x": RAIL_FIRST_X,
             "spacing_m": RAIL_SPACING,
-            "y_start": AISLE_WIDTH,
             "length_m": RAIL_LENGTH,
+            "north": {"y_start": AISLE_Y_MAX, "y_end": GREENHOUSE_Y},
+            "south": {"y_start": AISLE_Y_MIN, "y_end": 0.0},
         },
         "gateway_xy": list(GATEWAY),
         "default_params": p.__dict__,

@@ -14,7 +14,7 @@ phần cứng robot thật.
 
 ## 2. Giả định
 
-- Mỗi nhà kính 100 × 50 m có đúng 1 Gateway ở giữa lối chính.
+- Mỗi nhà kính 1 ha (100 × 100 m, lối chính ở giữa) có đúng 1 Gateway ở giữa lối chính (docs/greenhouse-survey.md).
 - Robot chạy trên ray 0,2 m/s, dừng 15–24 s mỗi điểm làm việc (mục 6).
 - Kênh log-distance n ≈ 4,63, σ ≈ 5 dB (Cama-Pinto et al. 2019, mục 5).
 - Kênh Gateway–Cloud mô phỏng bằng trace đo thật TP.HCM → AWS ap-southeast-1.
