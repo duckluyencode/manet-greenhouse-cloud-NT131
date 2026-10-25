@@ -65,6 +65,28 @@ Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400
 - [x] Phép đo cơ chế hợp lệ: mất gói do không có đường ≤ tổng mất gói, số hop ≥ 1,
   RSSI link chở dữ liệu ≥ độ nhạy thu.
 
+## Kết quả thí nghiệm (26/10/2026)
+
+280 run (S1, S2a, S2b, S3, chẩn đoán), mỗi điểm 10 seed, ns-3.48 profile `release`, nhà kính
+1 ha, radio WiFi 20 dBm + 3 dBi + 3 dBi, ngưỡng −82 dBm, kênh cloud RTT hằng số 40 ms (chưa có
+trace AWS). Không run nào lỗi. Chi tiết: `results/figures/hypotheses.md`, biểu đồ trong
+`results/figures/`, CSV thô trong `results/raw/`.
+
+| Câu | Kết quả | Ghi chú |
+|---|---|---|
+| Q1 | Bác bỏ (p = 0,87) | PDR 0,523 so với 0,518; số hop, RSSI link, tỷ lệ chuyển tiếp của robot yếu pin không đổi |
+| Q2a | Bác bỏ (p = 0,98) | Heuristic toàn mạng không thêm lợi ích so với trọng số cố định |
+| Q2b | Xác nhận (p = 0,99) | Với RTT 40 ms; cần trace WAN thật để kết luận chắc |
+| Q3 | Xác nhận | PDR trong khoảng mất cloud 0,59 so với 0,55 của no_cloud |
+
+- Mất gói đổi bản chất theo mật độ (S3): 6 robot mất 42 % vì không có đường; 16–20 robot gần
+  như luôn có đường nhưng mất 46–50 % trên link (tranh chấp kênh, flood RREQ/HELLO).
+- Ở 20 robot có xu hướng local_optimized cao hơn no_cloud (0,519 so với 0,483, p = 0,125),
+  chưa đủ ý nghĩa với 10 seed.
+- Chẩn đoán: buộc chỉ Gateway trả lời RREQ cũng không tạo khác biệt (p = 0,76 và 0,50); hook
+  delayed RREQ có tác dụng (D_max = 500 ms làm thời gian tìm đường tăng 803 → 1.081 ms) nhưng
+  đường đi trung bình chỉ 1,4–1,7 hop nên ít khi có đường thay thế để chọn.
+
 ## Chạy test
 
 ```bash

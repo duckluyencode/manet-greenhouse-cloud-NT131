@@ -1,0 +1,2 @@
+config_type,scenario,seed,node_count,mobility_speed,params,pdr,avg_delay_ms,p95_delay_ms,overhead_ratio,route_discovery_ms,min_energy_pct,cloud_bandwidth_bytes,loss_no_route_ratio,hops_avg,link_rssi_avg_dbm,weak_relay_share
+no_cloud,scale,6,10,0.2,"{""dmax_ms"": 20, ""jitter_ms"": 2, ""ttl_s"": 60, ""period_s"": 5, ""wan_model"": ""none"", ""window_s"": [300, 600], ""pdr_window"": 0.727667}",0.596023,167.048,989.777,0.58632,483.365,7.83607,0,0.172045,1.49476,-74.4882,0.33155
