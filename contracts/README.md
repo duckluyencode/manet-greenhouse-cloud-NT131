@@ -26,7 +26,8 @@ script sinh, không sửa tay.
 `tx_power_dbm`, `rx_sensitivity_dbm`, `source`. Mặc định dùng n = 4,63,
 σ = 5,15 dB như tài liệu ghi; khi đã nhập Bảng 2 của Cama-Pinto (2019) vào CSV
 thì chạy lại `fit_channel.py --measurements <csv>` để fit lại. Nhớ thay
-`--tx-power` / `--rx-sensitivity` khi đổi radio. Mặc định là WiFi 20 dBm / −88 dBm (tầm ~29 m);
+`--tx-power` / `--tx-gain` / `--rx-gain` / `--rx-sensitivity` khi đổi radio. Mặc định là
+WiFi 20 dBm + anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm (tầm ~29 m); `tx_gain_dbi`, `rx_gain_dbi` không bắt buộc (mặc định 0);
 lý do đổi khỏi 16 / −82 dBm ghi ở `docs/testing-report.md` (mục 14.3).
 
 ## waypoints/

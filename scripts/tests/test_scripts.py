@@ -83,7 +83,7 @@ def test_link_range_section_5_4() -> None:
 def test_contract_channel_json() -> None:
     channel = json.loads((ROOT / "contracts" / "channel.json").read_text(encoding="utf-8"))
     assert {"n", "sigma_db", "ref_loss_db", "ref_dist_m"} <= set(channel)
-    # Radio WiFi 20 dBm / -88 dBm: tầm cỡ vài chục mét (mục 1.1), ~29 m.
+    # Radio WiFi 20 dBm + anten 3 dBi mỗi đầu, ngưỡng -82 dBm: tầm cỡ vài chục mét (mục 1.1), ~29 m.
     assert 25 <= channel["link_range_m"] <= 35
     assert channel["rx_sensitivity_dbm"] >= fit_channel.MIN_RX_SENSITIVITY_DBM
 

@@ -54,7 +54,7 @@ Trang trại châu Âu và Bắc Mỹ lớn (vài ha tới hàng chục ha) như
 | Quét số robot (S3) | 6, 10, 16, 20 | Giữ | 6 ≈ chỉ robot thu hoạch; 16–20 là đội dày |
 | Tốc độ trên ray | 0,2 m/s | Giữ | PATHoBot ~0,2 m/s (thêm nguồn) |
 | Tốc độ độ nhạy | 1 m/s | Giữ | Xe ray thương mại 1,0–1,17 m/s |
-| Radio | WiFi 20 dBm / −88 dBm | Giữ | Xem `docs/testing-report.md`, mục 14.3 |
+| Radio | WiFi 20 dBm / −88 dBm | WiFi 20 dBm + anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm (cùng ngân sách 108 dB, tầm 29,35 m) | ns-3.48 crash khi ngưỡng < −82 dBm; xem `docs/testing-report.md`, mục 14.3 |
 
 Hệ quả đo được (kết nối hình học: robot có đường về Gateway, tầm 29,35 m, 3 seed):
 

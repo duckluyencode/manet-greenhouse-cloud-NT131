@@ -29,7 +29,8 @@ Versioning theo kế hoạch: `v0.1-alpha` → `v0.3-beta` → `v0.6` → `v1.0-
 
 - Build ns-3 bằng profile `release` thay cho `optimized` (bỏ `-march=native`): CI chết với SIGILL vì
   ccache lấy lại file biên dịch cho CPU khác; kết quả giờ tái tạo được trên mọi máy x86-64
-- Radio mặc định WiFi 20 dBm / −88 dBm (tầm ~29 m) thay cho 16 / −82 dBm (~18 m): ở 18 m, 10 robot chỉ có
+- Radio mặc định WiFi 20 dBm + anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm (tầm ~29 m) thay cho 16 / −82 dBm (~18 m); bản trung gian dùng −88 dBm bị bỏ
+  vì ns-3.48 crash ở 9/280 run khi hạ ngưỡng preamble dưới −82 dBm. Ở 18 m, 10 robot chỉ có
   đường về Gateway ~19 % thời gian (lý do chi tiết: `docs/testing-report.md`, mục 14.3)
 - `caar` đặt ngưỡng phát hiện preamble bằng độ nhạy thu (ns-3 mặc định chặn ở −82 dBm), từ chối độ nhạy < −90 dBm
 

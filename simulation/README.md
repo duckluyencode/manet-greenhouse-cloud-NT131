@@ -65,8 +65,9 @@ cd ~/ns-3-dev
 ## Mô hình trong `caar.cc`
 
 - Node 0 là Gateway (vị trí trong `contracts/waypoints/layout.json`), robot là node 1..N theo file waypoints.
-- WiFi 802.11b ad hoc 1 Mbps; công suất phát và ngưỡng thu lấy từ `channel.json` (20 dBm / −88 dBm);
-  ngưỡng phát hiện preamble đặt bằng ngưỡng thu, độ nhạy dưới −90 dBm bị từ chối;
+- WiFi 802.11b ad hoc 1 Mbps; công suất phát, độ lợi anten và ngưỡng thu lấy từ `channel.json`
+  (20 dBm, 3 dBi, 3 dBi, −82 dBm); ngưỡng phát hiện preamble đặt bằng ngưỡng thu, ngưỡng dưới
+  −82 dBm bị từ chối (ns-3.48 crash với "Invalid WifiPhy state RX");
   kênh `LogDistancePropagationLossModel` + `RandomPropagationLossModel` (chuẩn, σ).
 - Mỗi robot gửi UDP 128 B/s tới Gateway (cổng 9). Gói mang pin và RSSI trung bình của
   robot, nên Gateway dựng `NetworkSnapshot` từ chính gói nhận được.

@@ -48,11 +48,14 @@ Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400
 ## Kiểm tra tính đúng của mô phỏng (mục 14.3) — `scripts/check_ns3.py`
 
 - [x] w_h = 1: PDR local_optimized nằm trong CI 95% của no_cloud (5 seed).
-- [x] Tầm liên kết từ cấu hình radio: 29,35 m với WiFi 20 dBm / −88 dBm (`contracts/channel.json`).
+- [x] Tầm liên kết từ cấu hình radio: 29,35 m với WiFi 20 dBm + anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm (`contracts/channel.json`).
   Đã đổi khỏi mốc 18–20 m của bản tài liệu: cặp 16 dBm / −82 dBm là của radio 802.15.4 đã đo,
   còn robot dùng WiFi (mục 1.1, 5.4). Ở 18 m, với 10 robot chỉ ~19 % thời gian robot có đường
   về Gateway (PDR mô phỏng 0,14–0,23), nên Q1–Q3 gần như không đo được. Ở 29 m là ~82 %.
-  Độ nhạy thấp hơn −90 dBm làm PHY của ns-3.48 dừng ("Invalid WifiPhy state RX").
+  Lần đầu đạt tầm này bằng ngưỡng thu −88 dBm, nhưng hạ ngưỡng phát hiện preamble dưới mức
+  mặc định −82 dBm làm PHY của ns-3.48 dừng với "Invalid WifiPhy state RX" ở 9/280 run (mạng
+  dày; 6/6 run ở −94 dBm). Giờ giữ −82 dBm và đạt cùng ngân sách 108 dB bằng anten 3 dBi ở mỗi
+  đầu; cả 9 trường hợp từng crash đều chạy được. `caar` và `fit_channel.py` từ chối ngưỡng < −82 dBm.
 - [x] Mọi waypoint nằm trên lối chính hoặc hàng ray, trong nhà kính 1 ha 100 × 100 m
   (`gen_waypoints.validate`, test). Lý do chọn 1 ha: `docs/greenhouse-survey.md`.
 - [x] Log mất cloud theo thứ tự outage_start → stale_detected (357 s, TTL 60 s) → outage_end;

@@ -77,8 +77,8 @@ constexpr double kRssiEwmaAlpha = 0.1;
 constexpr double kRssiFreshSeconds = 10.0;
 // RSSI dùng khi chưa từng nghe thấy hàng xóm: biên dưới của chuẩn hóa (r = 0).
 constexpr double kUnknownRssiDbm = -90.0;
-// Độ nhạy thu thấp nhất chấp nhận: nhiễu nền kênh 22 MHz (~-94 dBm) + 4 dB SNR preamble.
-constexpr double kMinRxSensitivityDbm = -90.0;
+// Ngưỡng thu thấp nhất chấp nhận: ngưỡng phát hiện preamble mặc định của ns-3 (-82 dBm).
+constexpr double kMinRxSensitivityDbm = -82.0;
 // Ngưỡng "robot yếu pin" khi đo ai chuyển tiếp gói (weak_relay_share).
 constexpr double kWeakBatteryPct = 30.0;
 // TTL robot gắn cho gói dữ liệu; Gateway suy ra số hop = kDataTtl + 1 - TTL nhận được.
@@ -188,6 +188,13 @@ JsonNumber(const std::string& text, const std::string& key)
     NS_ABORT_MSG_IF(pos == std::string::npos, "missing key " << key);
     pos = text.find(':', pos);
     return std::strtod(text.c_str() + pos + 1, nullptr);
+}
+
+// Như JsonNumber nhưng trả giá trị mặc định khi thiếu khóa.
+double
+JsonNumberOr(const std::string& text, const std::string& key, double fallback)
+{
+    return text.find("\"" + key + "\"") == std::string::npos ? fallback : JsonNumber(text, key);
 }
 
 // Lấy mảng 2 số, ví dụ "gateway_xy": [50.0, 2.5].
@@ -813,6 +820,8 @@ main(int argc, char* argv[])
     double refDist = JsonNumber(channel, "ref_dist_m");
     double txPowerDbm = JsonNumber(channel, "tx_power_dbm");
     double rxSensDbm = JsonNumber(channel, "rx_sensitivity_dbm");
+    double txGainDbi = JsonNumberOr(channel, "tx_gain_dbi", 0);
+    double rxGainDbi = JsonNumberOr(channel, "rx_gain_dbi", 0);
 
     if (layoutPath.empty())
     {
@@ -884,14 +893,16 @@ main(int argc, char* argv[])
     phy.SetChannel(wifiChannel);
     phy.Set("TxPowerStart", DoubleValue(txPowerDbm));
     phy.Set("TxPowerEnd", DoubleValue(txPowerDbm));
+    phy.Set("TxGain", DoubleValue(txGainDbi));
+    phy.Set("RxGain", DoubleValue(rxGainDbi));
     phy.Set("RxSensitivity", DoubleValue(rxSensDbm));
-    // Mặc định ns-3 bỏ mọi khung dưới -82 dBm ở bước phát hiện preamble, bất kể
-    // RxSensitivity; đặt cùng ngưỡng để độ nhạy trong channel.json có hiệu lực.
-    // Ngưỡng sát nhiễu nền (~-94 dBm với kênh 22 MHz) làm PHY của ns-3.48 dừng với
-    // "Invalid WifiPhy state RX", nên chặn ở nhiễu nền + 4 dB (ngưỡng SNR preamble).
+    // ns-3 bỏ mọi khung dưới ngưỡng phát hiện preamble (mặc định -82 dBm), bất kể
+    // RxSensitivity; đặt cùng ngưỡng để độ nhạy trong channel.json có hiệu lực. Hạ ngưỡng
+    // dưới -82 dBm làm PHY của ns-3.48 thỉnh thoảng dừng với "Invalid WifiPhy state RX"
+    // (9/280 run ở -88 dBm), nên muốn tầm xa hơn thì tăng công suất hoặc độ lợi anten.
     NS_ABORT_MSG_IF(rxSensDbm < kMinRxSensitivityDbm,
                     "rx_sensitivity_dbm " << rxSensDbm << " is below " << kMinRxSensitivityDbm
-                                          << " dBm (noise floor + 4 dB)");
+                                          << " dBm (ns-3 preamble detection threshold)");
     phy.SetPreambleDetectionModel("ns3::ThresholdPreambleDetectionModel",
                                   "MinimumRssi",
                                   DoubleValue(rxSensDbm));
