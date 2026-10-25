@@ -1,103 +1,68 @@
-# Testing Report
+# Báo cáo kiểm thử
 
-**Dự án:** MANET Nhà Kính — CAAR  
-**Cập nhật:** (cập nhật liên tục theo tiến độ)
+Theo mục 14 của tài liệu đồ án. Cập nhật 22/10/2026.
 
----
+## Các tầng kiểm thử
 
-## 1. Chiến lược kiểm thử
+| Tầng | Công cụ | Chạy khi | Trạng thái |
+|---|---|---|---|
+| Unit/API cloud | pytest + TestClient (`cloud-service/tests/`) | CI mỗi push | 34 test pass |
+| Parity Python ↔ C++ | `contracts/parity_cases.json` + `simulation/caar-logic/test_caar_logic.cpp` | CI mỗi push | 704 kiểm tra pass |
+| Script phân tích | pytest (`scripts/tests/`) | CI mỗi push | 17 test pass |
+| Tính đúng mô phỏng | `scripts/check_ns3.py` trên ns-3.48 | CI job `ns3` mỗi push | 6 nhóm kiểm tra pass (Docker, 23/10) |
+| Đầu-cuối | curl, Swagger trên AWS | Trước demo | Chưa có (chưa deploy EC2) |
 
-### 1.1 Các tầng kiểm thử
+## Test case cloud (bảng 14.2) — `tests/test_api.py`
 
-| Tầng | Công cụ | Vị trí | Chạy tự động |
-|------|---------|--------|--------------|
-| Unit test (API) | pytest + httpx | `cloud-service/tests/` | CI (mỗi push) |
-| Integration test | pytest | `cloud-service/tests/` | CI (mỗi push) |
-| Simulation test (NS-3) | NS-3 test suite | `simulation/test/` | Thủ công (Week 3) |
-| End-to-end | Manual | — | Thủ công |
+| Test | Đầu vào | Kỳ vọng | Test |
+|---|---|---|---|
+| Snapshot hợp lệ | 2 node hợp lệ | 200, có weights, rule | `test_valid_snapshot` |
+| Pin ngoài miền | energy = 150 | 422 | `test_invalid_node_rejected[energy_150]` |
+| Danh sách rỗng | nodes = [] | 422 | `test_empty_nodes_rejected` |
+| Hop không hợp lệ | hop_count = 0 | 422 | `test_invalid_node_rejected[hop_0]` |
+| node_id là số | "node_id": 1 | 422 | `test_invalid_node_rejected[node_id_int]` |
+| Ngưỡng f_low | 10 robot, 3 pin < 20% | low_battery | `test_heuristic_rules[f_low_threshold]` |
+| Pin đúng 20% | 3 robot 20%, 7 robot 80% | balanced | `test_heuristic_rules[energy_exactly_20]` |
+| Thứ tự luật | 2/4 pin 10%, RSSI −85 | low_battery | `test_heuristic_rules[rule_order]` |
+| Trung vị chẵn | RSSI −85, −80, −75, −60 | poor_signal | `test_heuristic_rules[even_median]` |
+| Kẹp RSSI | RSSI −100 và −60 | balanced | `test_heuristic_rules[rssi_clamp]` |
+| Bình thường | pin và sóng tốt | balanced 0,4/0,3/0,3 | `test_heuristic_rules[normal]` |
+| Tổng trọng số | mọi trường hợp trên | tổng = 1, ≥ 0 | `assert_weights_valid` trong mỗi test |
+| Thiếu API key | không header | 401 | `test_missing_api_key` |
+| Timestamp cũ | lệch > 30 s | 400 | `test_stale_or_future_timestamp` |
+| Parity C++ | toàn bộ parity_cases.json | cùng rule, trọng số | `test_caar_logic.cpp` |
 
-### 1.2 Định nghĩa "Done" cho kiểm thử (DoD-Test)
+Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400), nonce tùy chọn,
+`/metrics/summary` và ghi `param_update` vào `cloud_events`.
 
-- Mỗi endpoint có ít nhất 1 test happy-path và 1 test edge-case.
-- CI xanh trước khi merge vào `main`.
-- Simulation test: mỗi kịch bản S1–S4 phải có ít nhất 3 seed khác nhau.
+## Parity C++ — `simulation/caar-logic/test_caar_logic.cpp`
 
----
+- 215 ca heuristic (15 ca biên viết tay + 200 ngẫu nhiên, nửa RSSI nguyên, nửa số thực).
+- 24 ca chi phí c_i (sai số 1e-12).
+- 5 kịch bản máy trạng thái Gateway, gồm ví dụ mục 7.3 (TTL 300 s, stale ở giây 595).
+- Kiểm tra tính chất mục 4.3: w_h = 1 cho thời gian chờ như nhau; pin yếu chờ lâu hơn;
+  phương án dự phòng 4.5.
 
-## 2. Test suite hiện tại
+Đã thử đổi `>=` thành `>` ở ngưỡng f_low: test báo 10 lỗi, tức bộ test bắt được sai lệch này.
 
-### 2.1 `cloud-service/tests/test_health.py`
+## Kiểm tra tính đúng của mô phỏng (mục 14.3) — `scripts/check_ns3.py`
 
-| Test | Mô tả | Kết quả |
-|------|-------|---------|
-| `test_health` | GET /health trả `{"status":"ok"}` với HTTP 200 | ✅ Pass |
-| `test_optimize_returns_weights` | POST /optimize trả `weights` và `twin_rejected=false` | ✅ Pass |
-| `test_detect_stub` | POST /detect trả `anomaly=false` | ✅ Pass |
+- [x] w_h = 1: PDR local_optimized nằm trong CI 95% của no_cloud (5 seed).
+- [x] Tầm liên kết từ cấu hình radio: 29,35 m với WiFi 20 dBm / −88 dBm (`contracts/channel.json`).
+  Đã đổi khỏi mốc 18–20 m của bản tài liệu: cặp 16 dBm / −82 dBm là của radio 802.15.4 đã đo,
+  còn robot dùng WiFi (mục 1.1, 5.4). Ở 18 m, với 10 robot chỉ ~19 % thời gian robot có đường
+  về Gateway (PDR mô phỏng 0,14–0,23), nên Q1–Q3 gần như không đo được. Ở 29 m là ~82 %.
+  Độ nhạy thấp hơn −90 dBm làm PHY của ns-3.48 dừng ("Invalid WifiPhy state RX").
+- [x] Mọi waypoint nằm trên lối chính hoặc hàng ray, trong 100 × 50 m (`gen_waypoints.validate`, test).
+- [x] Log mất cloud theo thứ tự outage_start → stale_detected (357 s, TTL 60 s) → outage_end;
+  không có param_update trong lúc mất cloud.
+- [x] Cùng seed chạy hai lần cho kết quả giống hệt.
+- [x] 4 cấu hình chạy được, CSV đúng hợp đồng, nhập được vào SQLite; NetAnim ghi đủ 3 mức Gateway.
 
----
+## Chạy test
 
-## 3. Kế hoạch kiểm thử theo tuần
-
-### Week 3-4 — Sau khi thêm logic /optimize thật
-
-- [ ] `test_optimize_high_energy`: node năng lượng cao → rssi_weight giảm, energy_weight tăng
-- [ ] `test_optimize_low_hop`: hop_count=1 → hop_weight ảnh hưởng thế nào?
-- [ ] `test_optimize_sum_weights`: tổng weights phải = 1.0 (hoặc trong khoảng cho phép)
-- [ ] `test_optimize_invalid_rssi`: rssi_avg = 0 (không hợp lệ) → 422
-
-### Week 5 — Graceful Degradation
-
-- [ ] `test_gateway_timeout_fallback`: mock cloud timeout → Gateway dùng `last_known_weights`
-- [ ] `test_gateway_no_cache_fallback`: không có cache → dùng default weights
-
-### Week 6-7 — Digital-Twin
-
-- [ ] `test_twin_rejected_flag`: khi twin dự đoán tệ hơn → `twin_rejected=true`, trả weights cũ
-- [ ] `test_twin_accepted_flag`: khi twin dự đoán tốt hơn → `twin_rejected=false`
-
----
-
-## 4. Các kịch bản mô phỏng NS-3
-
-| Kịch bản | `config_type` | Điều kiện | Metrics thu thập |
-|----------|---------------|-----------|-----------------|
-| S1-baseline | tất cả 3 | Kết nối cloud ổn định | PDR, delay, overhead |
-| S2-outage | `cloud_assisted` | Ngắt cloud hoàn toàn | PDR so với `no_cloud` |
-| S2-degraded | `cloud_assisted` | Cloud latency tăng dần | PDR theo latency |
-| S3-scale | `cloud_assisted` | node_count: 6→20 | Cloud bandwidth |
-| S3-quality | `cloud_assisted` | Packet loss 0→30% | Tại điểm nào cost > benefit? |
-| S4-mitm | `cloud_assisted` | MITM attack trên kênh cloud | Hiệu năng thay đổi thế nào? |
-| S4-gateway-spof | `cloud_assisted` | Gateway fail | Fallback hoạt động? |
-
----
-
-## 5. Báo cáo kết quả (cập nhật sau khi chạy)
-
-> Phần này sẽ được điền sau khi hoàn thành mô phỏng (Week 5-6).
-
-### 5.1 Kịch bản S1 — Hiệu năng
-
-| Metric | `no_cloud` | `local_optimized` | `cloud_assisted` | Cải thiện |
-|--------|-----------|-------------------|------------------|-----------|
-| PDR (%) | — | — | — | — |
-| Avg delay (ms) | — | — | — | — |
-| Overhead ratio | — | — | — | — |
-
-### 5.2 Kịch bản S2 — Graceful Degradation
-
-| Điều kiện | PDR `cloud_assisted` | PDR `no_cloud` | Kết luận |
-|-----------|---------------------|----------------|---------|
-| Cloud offline | — | — | — |
-
----
-
-## 6. Bảo mật (Kịch bản S4)
-
-Bề mặt tấn công mới do kênh cloud:
-
-| Bề mặt | Mô tả | Biện pháp đề xuất |
-|--------|-------|------------------|
-| MITM trên kênh Gateway↔Cloud | Kẻ tấn công inject weights giả | HTTPS/TLS + xác thực request |
-| Replay attack | Gửi lại telemetry cũ để khai thác | Timestamp + nonce trong TelemetrySnapshot |
-| Gateway SPOF | Mất Gateway → mạng cô lập | Multi-gateway topology (future work) |
-| Stale params | Cloud offline dài, params lỗi thời | TTL cho cached weights |
+```bash
+cd cloud-service && pytest
+pytest scripts/tests
+cd simulation/caar-logic && g++ -std=c++17 -O2 -o test_caar_logic test_caar_logic.cpp && ./test_caar_logic
+```

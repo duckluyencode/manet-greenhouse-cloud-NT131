@@ -21,66 +21,57 @@ Mạng tùy biến di động (MANET) trong nhà kính phải đối mặt với
 
 ```mermaid
 graph TB
-    subgraph CLOUD["CLOUD LAYER"]
-        CS["Cloud Service (FastAPI)<br/>/optimize · /detect · /health"]
-        DT["Digital-Twin (stub)<br/>sklearn regression"]
-        DB[("SQLite DB<br/>runs / metrics / cloud_events")]
-        CS <--> DT
+    subgraph CLOUD["CLOUD (AWS EC2, ap-southeast-1)"]
+        CS["FastAPI · /health · /optimize · /metrics/summary<br/>heuristic toàn mạng (mục 7.2)"]
+        DB[("SQLite<br/>runs / metrics / cloud_events / wan_trace")]
         CS --- DB
     end
 
-    subgraph EDGE["EDGE LAYER"]
-        GW["Gateway Node<br/>(graceful degradation<br/>→ fallback cached params)"]
-        NA["MANET Node A<br/>(AODV + weights)"]
-        NB["MANET Node B<br/>(AODV + weights)"]
+    subgraph EDGE["EDGE (NS-3)"]
+        GW["Gateway<br/>máy trạng thái 3 mức + TTL"]
+        NA["Robot<br/>AODV + delayed RREQ"]
+        NB["Robot<br/>AODV + delayed RREQ"]
         GW --- NA --- NB
     end
 
-    subgraph SIM["SIMULATION LAYER"]
-        NS["simulation/<br/>row-constrained mobility + channel model (NS-3)"]
-    end
-
-    CS -->|param_update| GW
-    NS -->|feeds| EDGE
+    GW -->|"NetworkSnapshot (HTTPS + API key)"| CS
+    CS -->|"weights + rule"| GW
 ```
+
+Cloud chỉ quyết định 3 trọng số (w_h, w_r, w_e); mất cloud thì Gateway hạ cấp
+về trọng số cache rồi bộ cân bằng, robot vẫn định tuyến được.
 
 ---
 
 ## Câu hỏi nghiên cứu
 
-| # | Kịch bản | Câu hỏi |
-|---|----------|---------|
-| S1 | Hiệu năng | CAAR có cải thiện PDR, độ trễ, chi phí điều khiển so với AODV thuần không? |
-| S2 | Khả năng hoạt động | Graceful degradation có ngăn hiệu năng giảm dưới ngưỡng no-cloud không? |
-| S3 | Chi phí tích hợp | Tại quy mô nào chi phí băng thông vượt quá lợi ích tối ưu hóa? |
-| S4 | An ninh | Kênh cloud có tạo bề mặt tấn công mới đáng kể không? |
+| # | Giả thuyết | Kịch bản |
+|---|---|---|
+| Q1 | `local_optimized` cho PDR cao hơn `no_cloud` | S1 |
+| Q2a | `gateway_heuristic` cho PDR cao hơn `local_optimized` | S1 |
+| Q2b | `cloud_assisted` và `gateway_heuristic` không khác nhau có ý nghĩa | S1, S2 |
+| Q3 | Khi mất cloud, PDR không thấp hơn `no_cloud` | S2 |
 
 ---
 
 ## Cấu trúc dự án
 
 ```
-manet-greenhouse-cloud/
-├── cloud-service/          # Backend FastAPI (Python)
-│   ├── app/
-│   │   ├── main.py         # Entry point — /health, /optimize, /detect
-│   │   ├── db.py           # SQLite layer (runs, metrics, cloud_events)
-│   │   ├── models.py       # Pydantic request/response models
-│   │   └── twin.py         # Digital-Twin validation (stub → Week 6-7)
-│   ├── tests/
-│   │   └── test_health.py  # pytest suite
-│   └── requirements.txt
-├── simulation/             # NS-3 module (Owner: A)
-│   └── README.md           # Hướng dẫn cài NS-3 + cấu trúc dự kiến
-├── docs/
-│   ├── architecture.md     # Kiến trúc chi tiết
-│   ├── api-doc.md          # API reference
-│   ├── dev-guide.md        # Hướng dẫn developer
-│   ├── srs.md              # Software Requirements Specification
-│   ├── testing-report.md   # Báo cáo kiểm thử
-│   └── user-guide.md       # Hướng dẫn sử dụng
-├── CHANGELOG.md
-└── README.md
+manet-greenhouse-cloud-NT131/
+├── contracts/              # hợp đồng dữ liệu A ↔ B (xem contracts/README.md)
+│   ├── parity_cases.json   # test vector heuristic + chi phí c_i + máy trạng thái Gateway
+│   ├── channel.json        # n, σ, L0, tầm sóng
+│   └── waypoints/          # quỹ đạo robot theo số robot và seed
+├── cloud-service/          # Owner B — FastAPI
+│   └── app/                # main, models, heuristic, security, db
+├── deploy/                 # Owner B — docker-compose (FastAPI + Caddy HTTPS)
+├── scripts/                # Owner B — sinh dữ liệu, đo WAN, chạy hàng loạt, nhập SQLite, vẽ
+├── simulation/
+│   ├── caar-logic/         # Owner B — caar_logic.h (C++ thuần) + parity test g++
+│   ├── scratch/            # Owner A — kịch bản NS-3
+│   └── aodv-patch/         # Owner A — delayed RREQ trong RecvRequest
+├── results/                # raw/ (CSV NS-3), figures/ (biểu đồ)
+└── docs/
 ```
 
 ---
@@ -92,32 +83,35 @@ manet-greenhouse-cloud/
 - Python 3.11+
 - pip
 
-### Cài đặt & chạy cloud-service
+### Cloud service
 
 ```bash
-# 1. Cài dependencies
 cd cloud-service
 pip install -r requirements.txt
-
-# 2. Chạy server
-uvicorn app.main:app --reload --port 8000
-
-# 3. Truy cập API docs
-# http://localhost:8000/docs
+export CAAR_API_KEY=dev-key          # Windows: set CAAR_API_KEY=dev-key
+uvicorn app.main:app --reload --port 8000   # Swagger: http://localhost:8000/docs
+pytest
 ```
 
-### Chạy với Docker
+### Deploy (EC2)
 
 ```bash
-docker build -t caar-cloud ./cloud-service
-docker run -p 8000:8000 caar-cloud
+cp deploy/.env.example deploy/.env   # điền CAAR_API_KEY, CAAR_DOMAIN
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 ```
 
-### Chạy tests
+### Logic C++ và script
 
 ```bash
-cd cloud-service
-pytest tests/ -v
+pip install -r scripts/requirements.txt
+python scripts/gen_parity_cases.py && (cd simulation/caar-logic &&   g++ -std=c++17 -O2 -o test_caar_logic test_caar_logic.cpp && ./test_caar_logic)
+python scripts/gen_waypoints.py
+python scripts/fit_channel.py              # WiFi 20 dBm / -88 dBm, tầm ~29 m
+python scripts/wan_probe.py --url https://<tên-miền>/optimize --interval 2 --hours 24 --out contracts/wan_trace.csv
+NS3_DIR=~/ns-3-dev scripts/run_batch.sh s1 s2a s2b
+python scripts/import_ns3_results.py --db results/results.db
+python scripts/plot_results.py --db results/results.db
+pytest scripts/tests
 ```
 
 ---
@@ -127,8 +121,8 @@ pytest tests/ -v
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
 | `GET` | `/health` | Kiểm tra service còn sống |
-| `POST` | `/optimize` | Nhận telemetry → trả về trọng số định tuyến mới |
-| `POST` | `/detect` | Nhận telemetry → cảnh báo bất thường (stub) |
+| `POST` | `/optimize` | `NetworkSnapshot` → trọng số + luật (cần `X-API-Key`) |
+| `GET` | `/metrics/summary` | PDR, độ trễ trung bình theo cấu hình và kịch bản (cần `X-API-Key`) |
 
 Xem chi tiết tại [`docs/api-doc.md`](docs/api-doc.md).
 
@@ -152,8 +146,8 @@ Xem chi tiết tại [`docs/api-doc.md`](docs/api-doc.md).
 
 | Vai trò | Trách nhiệm |
 |---------|-------------|
-| **Owner A** — Simulation Lead | NS-3 mobility model, channel model, AODV integration |
-| **Owner B** — Cloud/Backend Lead | FastAPI cloud service, Digital-Twin, CI/CD |
+| **Owner A** — Simulation | Chỉ việc cần NS-3: `scratch/caar.cc`, sửa `RecvRequest`, chạy kịch bản |
+| **Owner B** — Cloud, logic, phân tích | FastAPI, AWS, bảo mật, trace WAN, `caar_logic.h`, quỹ đạo, kênh, nhập SQLite, biểu đồ |
 
 ---
 

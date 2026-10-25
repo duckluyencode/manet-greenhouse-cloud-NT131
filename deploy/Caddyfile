@@ -1,0 +1,16 @@
+# Lớp 1 của mục 8.2: Caddy tự xin chứng chỉ Let's Encrypt cho CAAR_DOMAIN
+# và chuyển HTTP sang HTTPS. Cần mở cổng 80 và 443 trên Security Group.
+{$CAAR_DOMAIN} {
+	encode gzip
+	reverse_proxy api:8000
+
+	# Giới hạn kích thước body: snapshot chỉ vài trăm byte đến vài KB.
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

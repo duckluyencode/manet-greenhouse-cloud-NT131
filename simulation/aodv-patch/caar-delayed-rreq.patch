@@ -1,0 +1,136 @@
+--- a/src/aodv/model/aodv-routing-protocol.cc
++++ b/src/aodv/model/aodv-routing-protocol.cc
+@@ -327,8 +327,19 @@
+                           "Access to the underlying UniformRandomVariable",
+                           StringValue("ns3::UniformRandomVariable"),
+                           MakePointerAccessor(&RoutingProtocol::m_uniformRandomVariable),
+-                          MakePointerChecker<UniformRandomVariable>());
++                          MakePointerChecker<UniformRandomVariable>())
++            .AddTraceSource("RouteDiscovery",
++                            "CAAR: route discovery finished at the originator "
++                            "(destination, time from first RREQ to RREP).",
++                            MakeTraceSourceAccessor(&RoutingProtocol::m_routeDiscoveryTrace),
++                            "ns3::aodv::RoutingProtocol::RouteDiscoveryTracedCallback");
+     return tid;
++}
++
++void
++RoutingProtocol::SetRreqForwardDelayCallback(RreqForwardDelayCallback cb)
++{
++    m_rreqForwardDelay = cb;
+ }
+ 
+ void
+@@ -1046,6 +1057,8 @@
+     {
+         m_rreqCount++;
+     }
++    // CAAR: remember when this route discovery started (first attempt only)
++    m_routeDiscoveryStart.emplace(dst, Simulator::Now());
+     // Create RREQ header
+     RreqHeader rreqHeader;
+     rreqHeader.SetDst(dst);
+@@ -1509,7 +1522,11 @@
+             destination = iface.GetBroadcast();
+         }
+         m_lastBcastTime = Simulator::Now();
+-        Simulator::Schedule(MilliSeconds(m_uniformRandomVariable->GetInteger(0, 10)),
++        // CAAR: delayed RREQ forwarding, the wait depends on this node's cost
++        Time delay = m_rreqForwardDelay.IsNull()
++                         ? MilliSeconds(m_uniformRandomVariable->GetInteger(0, 10))
++                         : m_rreqForwardDelay(receiver, src);
++        Simulator::Schedule(delay,
+                             &RoutingProtocol::SendTo,
+                             this,
+                             socket,
+@@ -1711,6 +1728,13 @@
+     NS_LOG_LOGIC("receiver " << receiver << " origin " << rrepHeader.GetOrigin());
+     if (IsMyOwnAddress(rrepHeader.GetOrigin()))
+     {
++        // CAAR: route discovery time, from the first RREQ to this RREP
++        auto started = m_routeDiscoveryStart.find(dst);
++        if (started != m_routeDiscoveryStart.end())
++        {
++            m_routeDiscoveryTrace(dst, Simulator::Now() - started->second);
++            m_routeDiscoveryStart.erase(started);
++        }
+         if (toDst.GetFlag() == IN_SEARCH)
+         {
+             m_routingTable.Update(newEntry);
+@@ -1893,6 +1917,7 @@
+     if (m_routingTable.LookupValidRoute(dst, toDst))
+     {
+         SendPacketFromQueue(dst, toDst.GetRoute());
++        m_routeDiscoveryStart.erase(dst); // CAAR
+         NS_LOG_LOGIC("route to " << dst << " found");
+         return;
+     }
+@@ -1908,6 +1933,7 @@
+                                            << m_rreqRetries << ") times with ttl "
+                                            << m_netDiameter);
+         m_addressReqTimer.erase(dst);
++        m_routeDiscoveryStart.erase(dst); // CAAR
+         m_routingTable.DeleteRoute(dst);
+         NS_LOG_DEBUG("Route not found. Drop all packets with dst " << dst);
+         m_queue.DropPacketWithDst(dst);
+@@ -1923,6 +1949,7 @@
+     {
+         NS_LOG_DEBUG("Route down. Stop search. Drop packet with destination " << dst);
+         m_addressReqTimer.erase(dst);
++        m_routeDiscoveryStart.erase(dst); // CAAR
+         m_routingTable.DeleteRoute(dst);
+         m_queue.DropPacketWithDst(dst);
+     }
+--- a/src/aodv/model/aodv-routing-protocol.h
++++ b/src/aodv/model/aodv-routing-protocol.h
+@@ -28,6 +28,7 @@
+ #include "ns3/node.h"
+ #include "ns3/output-stream-wrapper.h"
+ #include "ns3/random-variable-stream.h"
++#include "ns3/traced-callback.h"
+ 
+ #include <map>
+ 
+@@ -192,6 +193,28 @@
+      */
+     int64_t AssignStreams(int64_t stream);
+ 
++    /**
++     * CAAR: callback returning how long to wait before rebroadcasting a RREQ.
++     * Arguments: address of the receiving interface, address of the previous hop.
++     * When unset, the original AODV jitter U(0, 10) ms is used.
++     */
++    typedef Callback<Time, Ipv4Address, Ipv4Address> RreqForwardDelayCallback;
++
++    /**
++     * CAAR: set the RREQ forwarding delay callback (delayed RREQ forwarding).
++     *
++     * @param cb the callback; a null callback restores the original jitter
++     */
++    void SetRreqForwardDelayCallback(RreqForwardDelayCallback cb);
++
++    /**
++     * CAAR: signature of the RouteDiscovery trace source.
++     *
++     * @param dst the destination the route was discovered for
++     * @param duration time from the first RREQ to the RREP at the originator
++     */
++    typedef void (*RouteDiscoveryTracedCallback)(Ipv4Address dst, Time duration);
++
+   protected:
+     void DoInitialize() override;
+ 
+@@ -492,6 +515,13 @@
+     Ptr<UniformRandomVariable> m_uniformRandomVariable;
+     /// Keep track of the last bcast time
+     Time m_lastBcastTime;
++
++    /// CAAR: RREQ forwarding delay (null = original jitter)
++    RreqForwardDelayCallback m_rreqForwardDelay;
++    /// CAAR: time of the first RREQ of each ongoing route discovery
++    std::map<Ipv4Address, Time> m_routeDiscoveryStart;
++    /// CAAR: fired when the originator receives the RREP
++    TracedCallback<Ipv4Address, Time> m_routeDiscoveryTrace;
+ };
+ 
+ } // namespace aodv

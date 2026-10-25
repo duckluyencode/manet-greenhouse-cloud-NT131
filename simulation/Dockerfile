@@ -1,44 +1,43 @@
-# NS-3 3.42 build environment
-# Ubuntu 22.04 + cmake 3.25+ + g++ 11 + Python 3.10
-FROM ubuntu:22.04
+# Môi trường NS-3 dùng chung cho cả nhóm (mục 13.1, 13.5): Ubuntu 24.04 + ns-3.48.
+#
+# Build từ gốc repo (context phải là repo vì cần contracts/ và simulation/):
+#   docker build -f simulation/Dockerfile -t caar-ns3 .
+# Chạy một kịch bản:
+#   docker run --rm -v "$PWD:/repo" caar-ns3 \
+#     /opt/ns-3-dev/ns3 run --no-build "caar --config=no_cloud --seed=1 --nodes=10 \
+#       --waypoints=/repo/contracts/waypoints/10_1.csv --channel=/repo/contracts/channel.json \
+#       --out=/repo/results/raw/no_cloud_baseline_1.csv"
+# Chạy hàng loạt:
+#   docker run --rm -v "$PWD:/repo" -e NS3_DIR=/opt/ns-3-dev caar-ns3 /repo/scripts/run_batch.sh s1
+
+# --- base: ns-3.48 gốc, chỉ các module CAAR cần ---------------------------------
+FROM ubuntu:24.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
-
-# 1. Cài dependencies
-RUN apt-get update && apt-get install -y \
-    g++ \
-    python3 \
-    python3-dev \
-    python3-pip \
-    cmake \
-    ninja-build \
-    git \
-    ccache \
-    libboost-all-dev \
-    libgsl-dev \
-    libsqlite3-dev \
-    libxml2-dev \
-    wget \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        g++ cmake ninja-build python3 git ca-certificates ccache patch \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Nâng cmake lên 3.25+
-RUN apt-get update && apt-get install -y software-properties-common \
-    && wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add - \
-    && apt-add-repository 'deb https://apt.kitware.com/ubuntu/ jammy main' \
-    && apt-get update && apt-get install -y cmake \
-    && rm -rf /var/lib/apt/lists/*
-
-# 3. Clone NS-3
+ARG NS3_TAG=ns-3.48
 WORKDIR /opt
-RUN git clone --branch ns-3.48 --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
+RUN git clone --depth 1 --branch ${NS3_TAG} https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
 
-# 4. Build NS-3
+# Mỗi luồng biên dịch module wifi cần ~1 GB RAM; tăng JOBS nếu Docker có nhiều RAM hơn.
+ARG JOBS=4
+ENV JOBS=${JOBS}
 WORKDIR /opt/ns-3-dev
-RUN ./ns3 configure --enable-tests --enable-examples \
-    && ./ns3 build -j4
+RUN ./ns3 configure --build-profile=optimized --disable-examples --disable-tests \
+        --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim" \
+    && ./ns3 build -j ${JOBS}
 
-# 5. Thư mục làm việc
-WORKDIR /opt/ns-3-dev/scratch
+# --- caar: áp patch delayed RREQ + kịch bản scratch/caar --------------------------
+FROM base AS caar
 
+COPY simulation/aodv-patch /tmp/caar/simulation/aodv-patch
+COPY simulation/scratch /tmp/caar/simulation/scratch
+COPY simulation/caar-logic /tmp/caar/simulation/caar-logic
+COPY simulation/install.sh /tmp/caar/simulation/install.sh
+RUN /tmp/caar/simulation/install.sh /opt/ns-3-dev && ./ns3 build -j ${JOBS}
+
+WORKDIR /repo
 CMD ["/bin/bash"]
-

@@ -1,0 +1,5 @@
+# Hợp đồng dữ liệu được sinh lại và so sánh trên CI (Linux): luôn dùng LF.
+contracts/** text eol=lf
+*.sh text eol=lf
+Caddyfile text eol=lf
+*.patch text eol=lf

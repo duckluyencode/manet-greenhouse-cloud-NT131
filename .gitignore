@@ -30,12 +30,14 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 
-# NS-3
+# NS-3 (simulation/scratch/ là code của nhóm, không bỏ qua)
 ns-3-dev/
 *.pcap
 *.tr
 *.xml
-scratch/
+
+# Log chạy hàng loạt (scripts/run_batch.sh)
+results/raw/*.log
 
 # IDEs
 .vscode/
@@ -50,4 +52,5 @@ Thumbs.db
 # Secrets
 .env
 .env.*
+!.env.example
 secrets.json
