@@ -15,12 +15,16 @@ sudo apt install g++ cmake ninja-build python3 git patch ccache
 git clone --depth 1 --branch ns-3.48 https://gitlab.com/nsnam/ns-3-dev.git ~/ns-3-dev
 simulation/install.sh ~/ns-3-dev
 cd ~/ns-3-dev
-./ns3 configure --build-profile=optimized --disable-examples --disable-tests \
+./ns3 configure --build-profile=release --disable-examples --disable-tests \
   --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim"
 ./ns3 build
 ```
 
 Sửa `caar.cc` hoặc `caar_logic.h` trong repo thì chạy lại `install.sh` rồi `./ns3 build`.
+
+Dùng profile `release` chứ không dùng `optimized`: `optimized` thêm `-march=native`, file chạy
+chỉ dùng được trên đúng loại CPU đã build (CI từng chết với SIGILL) và kết quả số thực có thể
+lệch giữa các máy. `release` giữ `-O3`, tắt assert và log như `optimized`.
 
 ## Hoặc dùng Docker
 
@@ -54,6 +58,7 @@ cd ~/ns-3-dev
 | `--fixed-weights` | trống | Ghi đè trọng số `local_optimized`, ví dụ `1,0,0` (kiểm tra w_h = 1) |
 | `--window-start`, `--window-end` | 300, 600 s | Cửa sổ tính `params.pdr_window` (dùng cho Q3) |
 | `--speed` | 0,2 | Ghi vào cột `mobility_speed` |
+| `--destination-only` | tắt | Chỉ Gateway trả lời RREQ (AODV `DestinationOnly`); dùng cho kịch bản chẩn đoán `diag` |
 | `--netanim`, `--netanim-start`, `--netanim-stop` | tắt, 0, cuối | File XML NetAnim và cửa sổ ghi gói tin |
 | `--drain-move`, `--drain-tx` | 0,02 %/s, 0,001 %/gói | Hao pin (mục 6.3) |
 
