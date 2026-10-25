@@ -1,133 +1,75 @@
-# Kiến trúc hệ thống CAAR
+# Kiến trúc CAAR
 
-## 1. Tổng quan
+Nguồn: tài liệu đồ án mục 4, 7, 9. Tài liệu này mô tả phần đã cài trong repo.
 
-Kiến trúc **Cloud-Assisted Adaptive Routing (CAAR)** tách biệt hai mặt phẳng:
+## 3 tầng
 
-- **Mặt phẳng biên (Edge Plane):** Lõi AODV gọn nhẹ chạy tự chủ trên từng nút MANET, đảm bảo tiết kiệm năng lượng tối đa.
-- **Mặt phẳng điều phối (Cloud Plane):** Bộ tối ưu hóa trên đám mây tổng hợp telemetry từ toàn mạng, tính lại trọng số định tuyến định kỳ và đẩy xuống Gateway.
+| Tầng | Chạy ở | Vai trò |
+|---|---|---|
+| Robot | NS-3 (`simulation/scratch/caar.cc`, Owner A) | AODV mở rộng: delayed RREQ forwarding theo chi phí c_i |
+| Gateway | NS-3, logic trong `simulation/caar-logic/caar_logic.h` | Gom telemetry, gọi Cloud mỗi T = 5 s, máy trạng thái hạ cấp 3 mức |
+| Cloud | FastAPI trên EC2 (`cloud-service/`) | Control plane: chọn 3 trọng số (w_h, w_r, w_e) cho toàn mạng |
 
-Cơ chế **graceful degradation** đảm bảo mạng không sụp đổ khi mất kết nối cloud — các nút tự động dùng bộ tham số đã cache cục bộ.
+Logic chọn đường nằm hoàn toàn ở robot, nên mất cloud thì mạng vẫn chạy.
+Dữ liệu cảm biến không đi qua kênh Gateway–Cloud; kênh này chỉ mang telemetry định tuyến.
 
----
+## Delayed RREQ forwarding (mục 4)
 
-## 2. Các thành phần
-
-### 2.1 MANET Node (Edge)
-
-- **Giao thức:** AODV mở rộng với metric đa tiêu chí (RSSI + hop-count + năng lượng còn lại).
-- **Di chuyển:** Row-constrained mobility — robot bám theo luống cây cố định (không random waypoint).
-- **Kênh truyền:** Mô hình suy hao có xét khung kim loại nhà kính và tán lá.
-- **Triển khai:** NS-3 (xem `simulation/`).
-
-### 2.2 Gateway Node
-
-- Cầu nối duy nhất giữa mạng MANET và cloud.
-- Thu thập telemetry từ các nút → gửi lên `POST /optimize`.
-- Nhận `weights` từ cloud → phân phát lại cho các nút.
-- **Graceful degradation:** Nếu không nhận được phản hồi từ cloud trong `timeout_ms`, Gateway dùng `last_known_weights` đã cache và đánh dấu trạng thái `degraded`.
-
-### 2.3 Cloud Service (FastAPI)
-
-Xem [`docs/api-doc.md`](api-doc.md) để biết chi tiết endpoint.
+Mỗi node chuyển tiếp chờ `D_i = D_max · c_i + U(0, J)` trước khi rebroadcast RREQ, với
 
 ```
-cloud-service/
-└── app/
-    ├── main.py     ← /health, /optimize, /detect
-    ├── db.py       ← SQLite (runs, metrics, cloud_events)
-    ├── models.py   ← TelemetrySnapshot, OptimizeResponse, DetectResponse
-    └── twin.py     ← Digital-Twin validation (Week 6-7)
+r_i = clamp((RSSI_i + 90) / 50, 0, 1)      e_i = pin còn lại / pin ban đầu
+c_i = w_h + w_r (1 − r_i) + w_e (1 − e_i)
 ```
 
-**Luồng `/optimize`:**
+Nhờ duplicate suppression, RREQ đến đích đầu tiên là bản có Σc_i nhỏ nhất. Không đổi
+định dạng gói, không đụng sequence number. `caar::BaseForwardDelay()` tính phần
+`D_max · c_i`; jitter lấy từ bộ sinh số NS-3 để tái tạo theo seed.
+
+## Luồng mỗi chu kỳ (mục 9.1)
 
 ```
-Gateway → POST /optimize {TelemetrySnapshot}
-              ↓
-    _compute_candidate_weights()
-    [RSSI×0.5 + energy×0.3 + hop×0.2]   ← placeholder, Week 3-4
-              ↓
-    [Digital-Twin validation]            ← stub, Week 6-7
-    predict_effect(telemetry, weights)
-    if worse_than_current → reject, trả weights cũ
-              ↓
-    → OptimizeResponse {weights, twin_rejected}
-              ↓
-Gateway ← nhận weights mới → phân phát cho MANET nodes
+Robot ──pin, RSSI──▶ Gateway ──POST /optimize (HTTPS, X-API-Key)──▶ Cloud
+                       ▲                                              │
+                       └──────── weights + rule ◀──────────────────────┘
+Gateway kiểm tra trọng số (≥ 0, tổng = 1) rồi phát cho mọi robot.
+Timeout 2 s / lỗi / trọng số sai → hạ cấp.
 ```
 
-### 2.4 Digital-Twin (stub → Week 6-7)
+## Heuristic (mục 7.2) — `app/heuristic.py`, `caar::ChooseWeights`
 
-- Mô hình hồi quy nhẹ (sklearn `LinearRegression` hoặc `DecisionTreeRegressor`).
-- Dự đoán PDR/delay từ `(telemetry hiện tại + weights ứng viên)`.
-- Dùng để quyết định `twin_rejected` trong `/optimize`.
-- Dữ liệu huấn luyện: bảng `metrics` trong SQLite (thu thập từ Week 6).
+| Điều kiện (luật đúng đầu tiên thắng) | w_h | w_r | w_e | rule |
+|---|---|---|---|---|
+| `10 × số robot pin < 20% ≥ 3 × số robot` | 0,2 | 0,3 | 0,5 | low_battery |
+| `2 × trung vị(RSSI kẹp [−90; −40]) < −150` | 0,3 | 0,5 | 0,2 | poor_signal |
+| còn lại | 0,4 | 0,3 | 0,3 | balanced |
 
-### 2.5 SQLite Database
+Bản Python là chuẩn; bản C++ phải khớp tuyệt đối trên `contracts/parity_cases.json`.
 
-| Bảng | Mô tả |
-|------|-------|
-| `runs` | Metadata mỗi lần chạy mô phỏng: config_type, scenario, seed, node_count |
-| `metrics` | Kết quả đo lường: PDR, delay, overhead, energy, cloud_latency |
-| `cloud_events` | Log sự kiện: param_update, outage_start/end, twin_rejected |
+## Graceful degradation (mục 7.3) — `caar::GatewayState`
 
----
+| Mức | Điều kiện | Gateway dùng | Sự kiện |
+|---|---|---|---|
+| 1 | Cloud trả lời hợp lệ | trọng số mới | `param_update` (+ `outage_end` nếu vừa phục hồi) |
+| 2 | Lỗi, tuổi cache < TTL | trọng số cache | `outage_start` |
+| 3 | Lỗi, tuổi cache ≥ TTL (hoặc chưa có cache) | bộ cân bằng 0,4/0,3/0,3 | `stale_detected` |
 
-## 3. Luồng dữ liệu tổng thể
+Tuổi cache tính từ lần cập nhật thành công cuối, chỉ kiểm tra ở mỗi lần gọi Cloud.
 
-```
-[NS-3 Simulation]
-    │ telemetry (RSSI, energy, hop_count)
-    ▼
-[Gateway Node]  ──── timeout? ────→ [Graceful Degradation]
-    │                                    └─ dùng cached weights
-    │ POST /optimize
-    ▼
-[Cloud Service]
-    │ _compute_candidate_weights()
-    │ Digital-Twin validation (Week 6-7)
-    ▼
-[OptimizeResponse {weights}]
-    │
-    ▼
-[Gateway] → phân phát weights → [MANET Nodes]
-    │
-    ▼
-[SQLite DB] ← log cloud_events
-```
+## Bảo mật kênh (mục 8.2)
 
----
+| Lớp | Cài ở |
+|---|---|
+| TLS | Caddy (`deploy/Caddyfile`), chứng chỉ Let's Encrypt |
+| API key | `app/security.py::require_api_key` |
+| Miền giá trị | `app/models.py` (Pydantic) và `caar::ValidWeights` ở Gateway |
+| Độ mới | `app/security.py::check_freshness` (±30 s, nonce tùy chọn) |
 
-## 4. Cấu hình thí nghiệm
+## Dữ liệu (mục 9.4) — `app/db.py`
 
-Ba cấu hình được so sánh trực tiếp:
-
-| `config_type` | Mô tả |
-|---------------|-------|
-| `no_cloud` | AODV thuần — baseline phân tán |
-| `local_optimized` | AODV với metric đa tiêu chí, không dùng cloud |
-| `cloud_assisted` | Kiến trúc CAAR đầy đủ |
-
----
-
-## 5. Graceful Degradation — cơ chế chi tiết
-
-```
-Cloud available?
-    ├─ YES → dùng weights từ /optimize response
-    └─ NO  → dùng last_known_weights (cached tại Gateway)
-               └─ Không có cache? → dùng default weights [0.5, 0.3, 0.2]
-```
-
-Mục tiêu (Kịch bản S2): hiệu năng khi degraded ≥ hiệu năng `no_cloud` baseline.
-
----
-
-## 6. Môi trường mô phỏng (NS-3)
-
-- **Topology:** Nhà kính 100×50 m, grid 3×N luống cây.
-- **Nút:** 6–20 MANET nodes (robot) + 1 Gateway.
-- **Mobility:** Row-constrained (bám theo luống, rẽ góc vuông).
-- **Channel:** Suy hao đặc trưng nhà kính (khung kim loại + tán lá); tham số hóa theo giai đoạn sinh trưởng.
-- **Metrics thu thập:** PDR, E2E delay, routing overhead, energy consumption, cloud bandwidth.
+| Bảng | Cột chính |
+|---|---|
+| `runs` | id, config_type, scenario, seed, node_count, mobility_speed, params (JSON), created_at |
+| `metrics` | run_id, pdr, avg_delay_ms, p95_delay_ms, overhead_ratio, route_discovery_ms, min_energy_pct, cloud_bandwidth_bytes |
+| `cloud_events` | run_id, ts, event_type, payload |
+| `wan_trace` | ts, rtt_ms, http_status, timeout |

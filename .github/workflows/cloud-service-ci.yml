@@ -31,10 +31,94 @@ jobs:
             cloud-service/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt ruff
+        run: pip install -r requirements.txt ruff==0.17.1
 
       - name: Lint with ruff
         run: ruff check app/ tests/
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
+
+  logic:
+    name: Parity C++ & scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: >-
+            scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt ruff==0.17.1
+
+      - name: parity_cases.json is up to date
+        run: |
+          python scripts/gen_parity_cases.py
+          git diff --exit-code contracts/parity_cases.json
+
+      - name: Parity test (g++)
+        working-directory: simulation/caar-logic
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -o test_caar_logic test_caar_logic.cpp
+          ./test_caar_logic ../../contracts/parity_cases.json
+
+      - name: Lint scripts
+        run: ruff check scripts/
+
+      - name: Test scripts
+        run: pytest scripts/tests -v --tb=short
+
+  ns3:
+    name: NS-3 build & integration check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NS3_TAG: ns-3.48
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build ccache patch python3
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ env.NS3_TAG }}-${{ hashFiles('simulation/**') }}
+          restore-keys: |
+            ccache-${{ env.NS3_TAG }}-
+
+      - name: Clone ns-3
+        run: git clone --depth 1 --branch "$NS3_TAG" https://gitlab.com/nsnam/ns-3-dev.git "$RUNNER_TEMP/ns-3-dev"
+
+      - name: Install CAAR (AODV patch + scratch/caar)
+        run: simulation/install.sh "$RUNNER_TEMP/ns-3-dev"
+
+      - name: Configure & build ns-3
+        working-directory: ${{ runner.temp }}/ns-3-dev
+        run: |
+          ./ns3 configure --build-profile=optimized --disable-examples --disable-tests \
+            --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim"
+          ./ns3 build
+          ccache --show-stats
+
+      - name: Integration check (section 14.3)
+        run: python3 scripts/check_ns3.py --ns3 "$RUNNER_TEMP/ns-3-dev" --out "$RUNNER_TEMP/caar-check" --seeds 5
+
+      - name: Upload check results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ns3-check-results
+          path: ${{ runner.temp }}/caar-check
+          if-no-files-found: ignore

@@ -1,84 +1,53 @@
 # Cloud Service — CAAR
 
-Backend FastAPI cho kiến trúc **CAAR (Cloud-Assisted Adaptive Routing)** —
-nhận telemetry từ Gateway Node dưới edge, trả về trọng số định tuyến tối
-ưu, và (giai đoạn sau) phát hiện bất thường qua Digital-Twin validation.
-
-Xem tổng quan kiến trúc toàn hệ thống tại [`../README.md`](../README.md)
-và [`../docs/architecture.md`](../docs/architecture.md).
+Backend FastAPI cho **CAAR (Cloud-Assisted Adaptive Routing)**: control plane
+nhận `NetworkSnapshot` từ Gateway và trả 3 trọng số định tuyến cho toàn mạng
+(tài liệu đồ án mục 7–9).
 
 ## Cấu trúc thư mục
 
 ```
 cloud-service/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py       # FastAPI app, 3 endpoint: /health, /optimize, /detect
-│   ├── models.py      # Pydantic request/response schema
-│   ├── db.py           # SQLite schema (runs, metrics, cloud_events)
-│   └── twin.py          # Digital-Twin validation (stub, Should-have)
-├── tests/
-│   ├── __init__.py
-│   └── test_health.py
+│   ├── main.py        # /health, /optimize, /metrics/summary
+│   ├── models.py      # NodeTelemetry, NetworkSnapshot, Weights, OptimizeResponse
+│   ├── heuristic.py   # hàm thuần chọn trọng số (mục 7.2) — bản chuẩn cho parity C++
+│   ├── security.py    # API key, kiểm tra timestamp/nonce
+│   └── db.py          # SQLite: runs, metrics, cloud_events, wan_trace
+├── tests/             # pytest: test_api.py (bảng 14.2), test_heuristic.py (+ parity)
+├── Dockerfile
 └── requirements.txt
 ```
 
-## Yêu cầu môi trường
-
-- Python 3.11+
-
-## Cài đặt
+## Chạy local
 
 ```bash
 cd cloud-service
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-## Chạy service
-
-```bash
+set CAAR_API_KEY=dev-key          # macOS/Linux: export CAAR_API_KEY=dev-key
 uvicorn app.main:app --reload --port 8000
+# Swagger: http://localhost:8000/docs
 ```
 
-Service chạy tại `http://127.0.0.1:8000`. Xem tài liệu Swagger UI tự
-sinh tại `http://127.0.0.1:8000/docs`.
+Không đặt `CAAR_API_KEY` thì `/optimize` trả 503 (fail closed).
 
-## Chạy test
+## Test
 
 ```bash
 pytest
 ```
 
-## Endpoints
+## Biến môi trường
 
-| Method | Path | Mô tả | Trạng thái |
-|---|---|---|---|
-| GET | `/health` | Kiểm tra service còn sống | ✅ Hoạt động |
-| POST | `/optimize` | Nhận telemetry, trả trọng số định tuyến mới | ⚠️ Placeholder — chờ công thức thật (Week 3-4) |
-| POST | `/detect` | Nhận telemetry, trả cảnh báo bất thường | ⚠️ Placeholder — Should-have, làm nếu còn thời gian (Week 6) |
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `CAAR_API_KEY` | (không có) | Khóa client phải gửi trong `X-API-Key` |
+| `CAAR_DB_PATH` | `cloud-service/results.db` | File SQLite (Docker: `/data/results.db`) |
 
-Chi tiết request/response schema xem [`../docs/api-doc.md`](../docs/api-doc.md).
+## Deploy
 
-## Database
+Xem `deploy/` (Docker Compose + Caddy, HTTPS tự động) và mục 13.3 của tài liệu.
 
-SQLite, file `results.db` tự tạo tại thư mục `cloud-service/` khi service
-khởi động lần đầu (qua `init_db()` trong `app/db.py`). Không commit file
-này lên git — đã có trong `.gitignore`.
-
-3 bảng chính:
-- `runs` — metadata mỗi lần chạy mô phỏng (config_type, scenario, seed...)
-- `metrics` — kết quả đo lường (PDR, delay, overhead, energy...)
-- `cloud_events` — log sự kiện trên kênh cloud (param_update, outage, twin_rejected...)
-
-## TODO đang mở (xem thêm comment TODO trong code)
-
-- **Week 3-4** — `_compute_candidate_weights()` trong `main.py`: thay công
-  thức placeholder bằng weighted heuristic thật (RSSI + hop-count + năng
-  lượng còn lại)
-- **Week 6-7** — `predict_effect()` trong `twin.py`: huấn luyện model hồi
-  quy nhẹ (sklearn) từ dữ liệu bảng `metrics`, bật lại đoạn code Digital-Twin
-  validation đang comment trong `main.py::optimize()`
-- **Week 6** (nếu còn thời gian) — `/detect` endpoint: logic phát hiện bất
-  thường thật thay vì luôn trả `anomaly: false`
+Chi tiết schema và mã lỗi: [`../docs/api-doc.md`](../docs/api-doc.md).
