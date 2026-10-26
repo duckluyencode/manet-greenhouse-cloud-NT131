@@ -70,7 +70,7 @@ loss_no_route_ratio,hops_avg,link_rssi_avg_dbm,weak_relay_share
 | Cột | Ý nghĩa |
 |---|---|
 | `config_type` | `no_cloud` \| `local_optimized` \| `gateway_heuristic` \| `cloud_assisted` |
-| `scenario` | `baseline` (S1) \| `outage` (S2a) \| `stale` (S2b) \| `scale` (S3) \| `sensitivity` \| `destonly` (chẩn đoán) |
+| `scenario` | `baseline` (S1) \| `outage` (S2a) \| `stale` (S2b) \| `scale` (S3) \| `sensitivity` \| `destonly`, `hook` (chẩn đoán) |
 | `mobility_speed` | Tốc độ trên ray (m/s) |
 | `params` | JSON: `dmax_ms`, `jitter_ms`, `ttl_s`, `period_s`, `outage_start_s`/`outage_end_s` (khi có), `destination_only`, `fixed_weights`, `wan_model`, `window_s`, `pdr_window` (PDR của gói gửi trong cửa sổ, mặc định 300–600 s, dùng cho Q3) |
 | `loss_no_route_ratio` | Gói dữ liệu bị bỏ vì không có / mất đường ÷ gói gửi; `1 − pdr − loss_no_route_ratio` là mất trên link |

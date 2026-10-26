@@ -287,7 +287,10 @@ def _cell(vals: list[float], fmt: str = ".3f") -> str:
 
 
 def _p(a: list[float], b: list[float]) -> str:
-    return f"{welch_t_test(a, b).p:.3f}" if len(a) > 1 and len(b) > 1 else "—"
+    if len(a) < 2 or len(b) < 2:
+        return "—"
+    p = welch_t_test(a, b).p
+    return "< 0.001" if p < 0.001 else f"{p:.3f}"
 
 
 def mechanism_section(runs) -> list[str]:
@@ -347,6 +350,25 @@ def mechanism_section(runs) -> list[str]:
             a = values(runs, "pdr", scenario="destonly", config_type="no_cloud", node_count=n)
             b = values(runs, "pdr", scenario="destonly", config_type="local_optimized", node_count=n)
             out.append(f"| {n} | Welch p (PDR) | {_p(b, a)} | | | |")
+
+    hook = {"scenario": "hook", "config_type": "local_optimized"}
+    hook_ms = values(runs, "route_discovery_ms", **hook)
+    if hook_ms:
+        n = int(values(runs, "node_count", **hook)[0])
+        base_ms = values(runs, "route_discovery_ms", scenario="destonly", config_type="local_optimized",
+                         node_count=n)
+        out += [
+            "",
+            f"Hook delayed RREQ có tác dụng ({n} robot, local_optimized, chỉ Gateway trả lời RREQ): "
+            "D_max dài hơn thì robot chờ lâu hơn trước khi chuyển tiếp RREQ, nên thời gian tìm đường tăng.",
+            "",
+            "| D_max | Thời gian tìm đường (ms) | PDR |",
+            "|---|---|---|",
+            f"| 20 ms | {_cell(base_ms, '.0f')} | "
+            f"{_cell(values(runs, 'pdr', scenario='destonly', config_type='local_optimized', node_count=n))} |",
+            f"| 500 ms | {_cell(hook_ms, '.0f')} | {_cell(values(runs, 'pdr', **hook))} |",
+            f"| Welch p | {_p(hook_ms, base_ms)} | |",
+        ]
     return out
 
 

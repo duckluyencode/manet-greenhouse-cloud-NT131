@@ -44,3 +44,11 @@ nếu PDR vẫn không khác, giả thuyết bị bác bỏ.
 | 20 | no_cloud | 0.649 ± 0.035 | 1.67 ± 0.04 | 0.240 ± 0.079 | 413 ± 44 |
 | 20 | local_optimized | 0.665 ± 0.039 | 1.68 ± 0.05 | 0.211 ± 0.070 | 433 ± 43 |
 | 20 | Welch p (PDR) | 0.499 | | | |
+
+Hook delayed RREQ có tác dụng (10 robot, local_optimized, chỉ Gateway trả lời RREQ): D_max dài hơn thì robot chờ lâu hơn trước khi chuyển tiếp RREQ, nên thời gian tìm đường tăng.
+
+| D_max | Thời gian tìm đường (ms) | PDR |
+|---|---|---|
+| 20 ms | 724 ± 60 | 0.550 ± 0.036 |
+| 500 ms | 1098 ± 54 | 0.544 ± 0.029 |
+| Welch p | < 0.001 | |

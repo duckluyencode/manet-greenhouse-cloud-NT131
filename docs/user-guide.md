@@ -44,7 +44,7 @@ python scripts/plot_results.py --db results/results.db --out results/figures
 | `s2b` | như `s2a` với TTL 15, 60, 300 s | Q3 |
 | `s3` | 4 cấu hình, 6, 10, 16, 20 robot | Q1 theo mật độ |
 | `sens` | D_max 5, 10, 20 ms; tốc độ 1 m/s | độ nhạy |
-| `diag` | chỉ Gateway trả lời RREQ, 10 và 20 robot | chẩn đoán Q1 |
+| `diag` | chỉ Gateway trả lời RREQ, 10 và 20 robot; thêm D_max 500 ms với 10 robot (`hook`) | chẩn đoán Q1 |
 
 Mỗi kịch bản chạy 10 seed (`SEEDS="1 2 3"` để chạy ít hơn). Run đã có file kết quả thì bỏ qua,
 nên chạy lại sau khi bị ngắt sẽ tiếp tục. `scripts/run_batch.sh --dry-run all` chỉ in lệnh.

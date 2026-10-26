@@ -56,11 +56,12 @@ Trang trại châu Âu và Bắc Mỹ lớn (vài ha tới hàng chục ha) như
 | Tốc độ cho kịch bản độ nhạy | 1 m/s | Xe ray thương mại 1,0–1,17 m/s |
 | Radio | WiFi 20 dBm, anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm (ngân sách 108 dB, tầm 29,35 m) | Ngưỡng thu bằng ngưỡng phát hiện preamble của ns-3.48; thấp hơn −82 dBm thì PHY của ns-3.48 có lúc dừng |
 
-Hệ quả đo được (kết nối hình học: robot có đường về Gateway, tầm 29,35 m, 3 seed):
+Hệ quả: tỷ lệ thời gian robot có đường (một hay nhiều hop) về Gateway, chỉ xét hình học với tầm
+29,35 m, trên quỹ đạo seed 1–10 (`python scripts/connectivity.py`):
 
 | Robot / 1 ha | 6 | 10 | 16 | 20 |
 |---|---|---|---|---|
-| Có đường về Gateway | 29 % | 50 % | 84 % | 89 % |
+| Có đường về Gateway | 31 % | 51 % | 80 % | 90 % |
 
 Ở mật độ robot thực tế, mạng bị chia cắt phần lớn thời gian; định tuyến chỉ cải thiện được
 phần gói mất khi đường đi còn tồn tại. Kịch bản S3 đo đúng điểm này.

@@ -6,7 +6,7 @@
 #   scripts/run_batch.sh --dry-run all                       # chỉ in lệnh
 #
 # Kịch bản: s1 (baseline), s2a (outage), s2b (stale), s3 (scale), sens (sensitivity),
-#           diag (destonly: chỉ Gateway trả lời RREQ), all.
+#           diag (destonly: chỉ Gateway trả lời RREQ; hook: như destonly 10 robot với D_max 500 ms), all.
 # Mỗi run ghi results/raw/<config>_<scenario>[_<biến thể>]_<seed>.csv; run đã có file thì bỏ qua,
 # nên chạy lại sau khi bị ngắt sẽ tiếp tục từ chỗ dừng.
 #
@@ -120,6 +120,8 @@ diag() {  # Chẩn đoán Q1: chỉ Gateway trả lời RREQ, để delayed RREQ
         run "$config" destonly "n$nodes" "$seed" "$nodes" "" 0.2 --ttl=60 --dmax=20 --destination-only=1
       done
     done
+    # Hook có tác dụng: D_max 500 ms phải làm thời gian tìm đường dài hơn rõ so với run D_max 20 ms ở trên
+    run local_optimized hook dmax500 "$seed" 10 "" 0.2 --ttl=60 --dmax=500 --destination-only=1
   done
 }
 

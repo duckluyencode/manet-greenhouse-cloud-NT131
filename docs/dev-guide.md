@@ -83,6 +83,7 @@ Thêm cột kết quả thì cập nhật cùng lúc `contracts/README.md`, `MET
 | `fit_channel.py` | Tham số kênh `contracts/channel.json` |
 | `run_batch.sh` | Chạy hàng loạt NS-3 (`--dry-run` để xem lệnh) |
 | `check_ns3.py` | Kiểm tra tích hợp NS-3 (mục 14.3) |
+| `connectivity.py` | Tỷ lệ thời gian robot có đường về Gateway (hình học, từ quỹ đạo và tầm liên kết) |
 | `import_ns3_results.py` | CSV kết quả → SQLite |
 | `caar_stats.py` | CI 95 %, Welch t-test (không cần scipy) |
 | `plot_results.py` | Biểu đồ mean ± CI 95 %, `hypotheses.md` |

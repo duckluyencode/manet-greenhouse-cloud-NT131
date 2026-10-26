@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import caar_stats
+import connectivity
 import fit_channel
 import gen_waypoints
 
@@ -135,6 +136,20 @@ def test_committed_waypoint_files_are_valid() -> None:
             rows = list(csv.DictReader(f))
         for r in rows:
             assert gen_waypoints.on_layout(float(r["x_m"]), float(r["y_m"])), path.name
+
+
+# --- connectivity -------------------------------------------------------------
+
+def test_connectivity_counts_multi_hop_paths() -> None:
+    # Gateway (0, 0), tầm 10 m: r1 cách 8 m, r2 nối qua r1, r3 ở xa.
+    tracks = {1: [(0.0, 8.0, 0.0)], 2: [(0.0, 16.0, 0.0)], 3: [(0.0, 40.0, 0.0)]}
+    assert connectivity.connectivity(tracks, (0.0, 0.0), 10.0, duration_s=5) == pytest.approx(2 / 3)
+
+
+def test_connectivity_interpolates_between_waypoints() -> None:
+    # Robot đi từ x = 5 tới x = 25 trong 10 s: còn trong tầm 10 m khi t <= 2,5 s.
+    tracks = {1: [(0.0, 5.0, 0.0), (10.0, 25.0, 0.0)]}
+    assert connectivity.connectivity(tracks, (0.0, 0.0), 10.0, duration_s=10) == pytest.approx(0.3)
 
 
 # --- import + plot ------------------------------------------------------------

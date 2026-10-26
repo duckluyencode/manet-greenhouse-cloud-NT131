@@ -11,6 +11,8 @@ Kiểm tra:
    (chỉ khi truyền --seeds >= 3, vì cần nhiều seed).
 5. Kết quả nhập được vào SQLite bằng import_ns3_results.py.
 6. --netanim ghi được file XML NetAnim hoàn chỉnh, Gateway đi qua đủ 3 mức khi mất cloud.
+7. Hook delayed RREQ có tác dụng: khi chỉ Gateway trả lời RREQ, D_max 500 ms làm thời gian
+   tìm đường dài hơn D_max 20 ms ít nhất 20 %.
 
 Chạy: python scripts/check_ns3.py --ns3 /opt/ns-3-dev --out /tmp/caar-check [--seeds 5]
 """
@@ -168,6 +170,15 @@ def main() -> None:
     check(all(f'descr="Gateway L{lv}"' in text for lv in (1, 2, 3)),
           "NetAnim shows Gateway levels L1, L2, L3")
     check("<wpr" in text, "NetAnim contains wireless packet records")
+
+    print("7. delayed RREQ hook changes route discovery (destination-only, seed 1)")
+    discovery = {}
+    for dmax in (20, 500):
+        row = run_caar(args.ns3, args.out / "hook" / f"dmax{dmax}.csv", "local_optimized", 1, "hook",
+                       "--ttl=60", f"--dmax={dmax}", "--destination-only=1")
+        discovery[dmax] = float(row["route_discovery_ms"])
+    check(discovery[500] > 1.2 * discovery[20],
+          f"route discovery {discovery[20]:.0f} ms (D_max 20) -> {discovery[500]:.0f} ms (D_max 500)")
 
     print()
     if failures:
