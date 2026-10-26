@@ -52,3 +52,15 @@ Hook delayed RREQ có tác dụng (10 robot, local_optimized, chỉ Gateway tr�
 | 20 ms | 724 ± 60 | 0.550 ± 0.036 |
 | 500 ms | 1098 ± 54 | 0.544 ± 0.029 |
 | Welch p | < 0.001 | |
+
+## Độ nhạy — D_max và tốc độ robot (10 robot)
+
+Welch p so PDR của local_optimized với no_cloud ở S1 (cùng tốc độ 0,2 m/s); ở tốc độ khác
+không có no_cloud để so.
+
+| Biến thể | PDR local_optimized | PDR cloud_assisted | Thời gian tìm đường local_optimized (ms) | Welch p (local_optimized so với no_cloud S1) |
+|---|---|---|---|---|
+| D_max 5 ms | 0.536 ± 0.046 | 0.538 ± 0.049 | 434 ± 28 | 0.535 |
+| D_max 10 ms | 0.522 ± 0.040 | 0.521 ± 0.042 | 424 ± 48 | 0.893 |
+| D_max 20 ms | 0.523 ± 0.042 | 0.524 ± 0.037 | 433 ± 45 | 0.867 |
+| 1 m/s (D_max 20 ms) | 0.549 ± 0.046 | 0.558 ± 0.056 | 454 ± 59 | — |

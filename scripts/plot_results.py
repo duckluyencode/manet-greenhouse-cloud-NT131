@@ -131,18 +131,22 @@ def bar_chart(runs, scenario, metric, out: Path, summary_rows) -> bool:
     return True
 
 
-def line_chart(runs, scenario, metric, xkey, xlabel, configs, title, out: Path, summary_rows) -> bool:
-    """xkey: tên cột của runs, hoặc 'p_<khóa>' để lấy từ params."""
+def line_chart(runs, scenario, metric, xkey, xlabel, configs, title, out: Path, summary_rows,
+               where: dict | None = None) -> bool:
+    """xkey: tên cột của runs, hoặc 'p_<khóa>' để lấy từ params. where: điều kiện lọc thêm."""
+    where = where or {}
+
     def xval(r):
         return r["params"].get(xkey[2:]) if xkey.startswith("p_") else r[xkey]
 
     series = {}
     for config in configs:
         xs = sorted({xval(r) for r in runs if r["scenario"] == scenario
-                     and r["config_type"] == config and xval(r) is not None})
+                     and r["config_type"] == config and xval(r) is not None
+                     and all(r[k] == v for k, v in where.items())})
         points = []
         for x in xs:
-            vals = values(runs, metric, scenario=scenario, config_type=config, **{xkey: x})
+            vals = values(runs, metric, scenario=scenario, config_type=config, **where, **{xkey: x})
             if vals:
                 s = summarize(vals)
                 points.append((x, s))
@@ -275,7 +279,38 @@ def hypotheses(runs) -> str:
         "Mọi kết quả, kể cả bác bỏ giả thuyết, được báo cáo trung thực.",
     ]
     lines += mechanism_section(runs)
+    lines += sensitivity_section(runs)
     return "\n".join(lines) + "\n"
+
+
+def sensitivity_section(runs) -> list[str]:
+    """Độ bền của kết luận (mục 10.2): đổi D_max và tốc độ robot, 10 robot."""
+    sens = [r for r in runs if r["scenario"] == "sensitivity"]
+    if not sens:
+        return []
+    base = values(runs, "pdr", scenario="baseline", config_type="no_cloud")
+    out = [
+        "",
+        "## Độ nhạy — D_max và tốc độ robot (10 robot)",
+        "",
+        "Welch p so PDR của local_optimized với no_cloud ở S1 (cùng tốc độ 0,2 m/s); ở tốc độ khác",
+        "không có no_cloud để so.",
+        "",
+        "| Biến thể | PDR local_optimized | PDR cloud_assisted | Thời gian tìm đường local_optimized (ms) "
+        "| Welch p (local_optimized so với no_cloud S1) |",
+        "|---|---|---|---|---|",
+    ]
+    dmaxes = sorted({r["params"].get("dmax_ms") for r in sens if r["mobility_speed"] == 0.2})
+    variants = [(f"D_max {d} ms", {"p_dmax_ms": d, "mobility_speed": 0.2}) for d in dmaxes]
+    variants += [(f"{s:g} m/s (D_max 20 ms)", {"mobility_speed": s})
+                 for s in sorted({r["mobility_speed"] for r in sens}) if s != 0.2]
+    for label, w in variants:
+        lo = values(runs, "pdr", scenario="sensitivity", config_type="local_optimized", **w)
+        ca = values(runs, "pdr", scenario="sensitivity", config_type="cloud_assisted", **w)
+        rd = values(runs, "route_discovery_ms", scenario="sensitivity", config_type="local_optimized", **w)
+        p = _p(lo, base) if w.get("mobility_speed") == 0.2 else "—"
+        out.append(f"| {label} | {_cell(lo)} | {_cell(ca)} | {_cell(rd, '.0f')} | {p} |")
+    return out
 
 
 def _cell(vals: list[float], fmt: str = ".3f") -> str:
@@ -405,8 +440,8 @@ def main() -> None:
                       f"S3 – {name} theo số robot", args.out / f"s3_{metric}.png", summary_rows):
             made.append(f"s3_{metric}.png")
     if line_chart(runs, "sensitivity", "pdr", "p_dmax_ms", "D_max (ms)",
-                  ["local_optimized", "cloud_assisted"], "Độ nhạy – PDR theo D_max",
-                  args.out / "sens_pdr_vs_dmax.png", summary_rows):
+                  ["local_optimized", "cloud_assisted"], "Độ nhạy – PDR theo D_max (0,2 m/s)",
+                  args.out / "sens_pdr_vs_dmax.png", summary_rows, where={"mobility_speed": 0.2}):
         made.append("sens_pdr_vs_dmax.png")
 
     with (args.out / "summary.csv").open("w", newline="", encoding="utf-8") as f:

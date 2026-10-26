@@ -42,7 +42,7 @@ graph TB
 Cloud chỉ quyết định 3 trọng số (w_h, w_r, w_e) cho toàn mạng; logic chọn đường nằm hoàn toàn ở
 robot. Mất cloud thì Gateway dùng trọng số cache, quá TTL thì về bộ cân bằng 0,4 / 0,3 / 0,3.
 
-## Kết quả (290 run, mỗi điểm 10 seed)
+## Kết quả (370 run, mỗi điểm 10 seed)
 
 | Câu | Giả thuyết | Kết quả |
 |---|---|---|
@@ -52,7 +52,8 @@ robot. Mất cloud thì Gateway dùng trọng số cache, quá TTL thì về b�
 | Q3 | Mất cloud, PDR không thấp hơn `no_cloud` | Xác nhận |
 
 Mạng thưa (6 robot/ha) mất gói chủ yếu vì không có đường về Gateway; mạng dày (16–20 robot/ha)
-gần như luôn có đường nhưng mất gói trên link. Chi tiết: [`docs/testing-report.md`](docs/testing-report.md),
+gần như luôn có đường nhưng mất gói trên link. Kết luận Q1 không đổi khi D_max 5–20 ms.
+Chi tiết: [`docs/testing-report.md`](docs/testing-report.md),
 bảng và biểu đồ trong [`results/figures/`](results/figures/).
 
 ## Cấu trúc repo
@@ -88,7 +89,7 @@ bash simulation/vm/demo.sh            # chạy 1 kịch bản và mở NetAnim
 ### Chạy toàn bộ thí nghiệm và vẽ kết quả
 
 ```bash
-NS3_DIR=~/ns-3-dev scripts/run_batch.sh s1 s2a s2b s3 diag
+NS3_DIR=~/ns-3-dev scripts/run_batch.sh s1 s2a s2b s3 sens diag
 python scripts/import_ns3_results.py --db results/results.db
 python scripts/plot_results.py --db results/results.db --out results/figures
 ```
