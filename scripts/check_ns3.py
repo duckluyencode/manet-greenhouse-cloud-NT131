@@ -10,7 +10,8 @@ Kiểm tra:
 4. w_h = 1 (wr = we = 0): PDR của local_optimized nằm trong CI 95% của no_cloud
    (chỉ khi truyền --seeds >= 3, vì cần nhiều seed).
 5. Kết quả nhập được vào SQLite bằng import_ns3_results.py.
-6. --netanim ghi được file XML NetAnim hoàn chỉnh, Gateway đi qua đủ 3 mức khi mất cloud.
+6. --netanim ghi được file XML NetAnim hoàn chỉnh, Gateway đi qua đủ 3 mức khi mất cloud,
+   có gói wifi trong cửa sổ ghi gói và vị trí robot cả ngoài cửa sổ đó.
 7. Hook delayed RREQ có tác dụng: khi chỉ Gateway trả lời RREQ, D_max 500 ms làm thời gian
    tìm đường dài hơn D_max 20 ms ít nhất 20 %.
 
@@ -20,6 +21,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -170,6 +172,8 @@ def main() -> None:
     check(all(f'descr="Gateway L{lv}"' in text for lv in (1, 2, 3)),
           "NetAnim shows Gateway levels L1, L2, L3")
     check("<wpr" in text, "NetAnim contains wireless packet records")
+    early = [t for t in re.findall(r'<nu p="p" t="([0-9.]+)"', text) if float(t) < 295]
+    check(len(early) >= 10, f"robot positions recorded before the packet window ({len(early)} before 295 s)")
 
     print("7. delayed RREQ hook changes route discovery (destination-only, seed 1)")
     discovery = {}

@@ -19,11 +19,12 @@
 - `simulation/scratch/caar.cc`: 4 cấu hình, kênh log-distance + shadowing, WiFi 802.11b,
   quỹ đạo từ `contracts/waypoints`, máy trạng thái Gateway, kênh cloud RTT 40 ms, mất cloud,
   4 phép đo cơ chế (mất gói do không có đường, số hop, RSSI link, chuyển tiếp bởi robot yếu pin),
-  `--destination-only`, xuất NetAnim
+  `--destination-only`, xuất NetAnim (vị trí robot tự ghi mỗi giây cả lượt chạy)
 - `simulation/caar-logic/caar_logic.h`: heuristic, chi phí c_i, máy trạng thái Gateway; parity với
   bản Python qua `contracts/parity_cases.json`
 - Môi trường: nhà kính 1 ha, 112 hàng ray, radio WiFi 20 dBm + anten 3 dBi, ngưỡng −82 dBm (tầm ~29 m)
-- Cài đặt: `simulation/install.sh`, `simulation/Dockerfile`, `simulation/vm/` (Ubuntu 24.04 không Docker)
+- Cài đặt: `simulation/install.sh`, `simulation/Dockerfile`, `simulation/vm/` (Ubuntu 24.04 không Docker,
+  NetAnim 3.109 kèm `netanim-wpr.patch` để vẽ được gói wifi của ns-3)
 
 ### Phân tích
 - `scripts/`: sinh quỹ đạo, kênh, test vector; `run_batch.sh` (S1, S2a, S2b, S3, sens, diag);
