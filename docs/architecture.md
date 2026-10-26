@@ -70,6 +70,5 @@ Tuổi cache tính từ lần cập nhật thành công cuối, chỉ kiểm tra
 | Bảng | Cột chính |
 |---|---|
 | `runs` | id, config_type, scenario, seed, node_count, mobility_speed, params (JSON), created_at |
-| `metrics` | run_id, pdr, avg_delay_ms, p95_delay_ms, overhead_ratio, route_discovery_ms, min_energy_pct, cloud_bandwidth_bytes |
+| `metrics` | run_id, pdr, avg_delay_ms, p95_delay_ms, overhead_ratio, route_discovery_ms, min_energy_pct, cloud_bandwidth_bytes, loss_no_route_ratio, hops_avg, link_rssi_avg_dbm, weak_relay_share |
 | `cloud_events` | run_id, ts, event_type, payload |
-| `wan_trace` | ts, rtt_ms, http_status, timeout |

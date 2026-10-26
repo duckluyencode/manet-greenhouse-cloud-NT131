@@ -54,3 +54,6 @@ Thumbs.db
 .env.*
 !.env.example
 secrets.json
+
+# Kết quả chạy demo trên máy ảo (simulation/vm/demo.sh)
+results/demo/

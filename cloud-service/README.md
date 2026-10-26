@@ -13,7 +13,7 @@ cloud-service/
 │   ├── models.py      # NodeTelemetry, NetworkSnapshot, Weights, OptimizeResponse
 │   ├── heuristic.py   # hàm thuần chọn trọng số (mục 7.2) — bản chuẩn cho parity C++
 │   ├── security.py    # API key, kiểm tra timestamp/nonce
-│   └── db.py          # SQLite: runs, metrics, cloud_events, wan_trace
+│   └── db.py          # SQLite: runs, metrics, cloud_events
 ├── tests/             # pytest: test_api.py (bảng 14.2), test_heuristic.py (+ parity)
 ├── Dockerfile
 └── requirements.txt
@@ -48,6 +48,7 @@ pytest
 
 ## Deploy
 
-Xem `deploy/` (Docker Compose + Caddy, HTTPS tự động) và mục 13.3 của tài liệu.
+`deploy/` (Docker Compose + Caddy, HTTPS tự động); các bước trên EC2 ở
+[`../docs/user-guide.md`](../docs/user-guide.md).
 
 Chi tiết schema và mã lỗi: [`../docs/api-doc.md`](../docs/api-doc.md).

@@ -6,9 +6,6 @@ import os
 import random
 import subprocess
 import sys
-import threading
-import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -16,7 +13,6 @@ import pytest
 import caar_stats
 import fit_channel
 import gen_waypoints
-import wan_probe
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 ROOT = SCRIPTS.parent
@@ -83,7 +79,7 @@ def test_link_range_section_5_4() -> None:
 def test_contract_channel_json() -> None:
     channel = json.loads((ROOT / "contracts" / "channel.json").read_text(encoding="utf-8"))
     assert {"n", "sigma_db", "ref_loss_db", "ref_dist_m"} <= set(channel)
-    # Radio WiFi 20 dBm / -88 dBm: tầm cỡ vài chục mét (mục 1.1), ~29 m.
+    # Radio WiFi 20 dBm + anten 3 dBi mỗi đầu, ngưỡng -82 dBm: tầm cỡ vài chục mét (mục 1.1), ~29 m.
     assert 25 <= channel["link_range_m"] <= 35
     assert channel["rx_sensitivity_dbm"] >= fit_channel.MIN_RX_SENSITIVITY_DBM
 
@@ -123,7 +119,11 @@ def test_rail_speed_is_respected() -> None:
     track = gen_waypoints.generate(10, 2, p)[1]
     for a, b in zip(track.points, track.points[1:]):
         dist = math.hypot(b[1] - a[1], b[2] - a[2])
-        if dist > 0 and b[2] > gen_waypoints.AISLE_WIDTH and a[2] >= gen_waypoints.AISLE_WIDTH:
+        # Đoạn trên ray: cùng x, hai đầu cùng một phía và không vào trong lối chính.
+        da, db = a[2] - gen_waypoints.AISLE_Y, b[2] - gen_waypoints.AISLE_Y
+        half = gen_waypoints.AISLE_WIDTH / 2 - 1e-9
+        on_rail = a[1] == b[1] and da * db > 0 and min(abs(da), abs(db)) >= half
+        if dist > 0 and on_rail:
             assert dist / (b[0] - a[0]) == pytest.approx(p.rail_speed)
 
 
@@ -146,9 +146,10 @@ def _write_result(path: Path, config, scenario, seed, pdr, params) -> None:
             "config_type", "scenario", "seed", "node_count", "mobility_speed", "params",
             "pdr", "avg_delay_ms", "p95_delay_ms", "overhead_ratio", "route_discovery_ms",
             "min_energy_pct", "cloud_bandwidth_bytes",
+            "loss_no_route_ratio", "hops_avg", "link_rssi_avg_dbm", "weak_relay_share",
         ])
         w.writerow([config, scenario, seed, 10, 0.2, json.dumps(params),
-                    pdr, 12.0, 30.0, 0.1, 45.0, 22.0, 1000])
+                    pdr, 12.0, 30.0, 0.1, 45.0, 22.0, 1000, 0.05, 1.8, -70.0, 0.1])
 
 
 def test_import_and_plot_pipeline(tmp_path) -> None:
@@ -192,51 +193,3 @@ def test_import_and_plot_pipeline(tmp_path) -> None:
     assert "| Q1 |" in hyp and "Xác nhận" in hyp
     with (figs / "summary.csv").open(encoding="utf-8") as f:
         assert any(r["scenario"] == "baseline" for r in csv.DictReader(f))
-
-
-# --- wan_probe ----------------------------------------------------------------
-
-class _Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-    slow_every = 0
-    calls = 0
-
-    def do_POST(self):
-        type(self).calls += 1
-        body = self.rfile.read(int(self.headers["Content-Length"]))
-        snapshot = json.loads(body)
-        ok = self.headers.get("X-API-Key") == "k" and snapshot["nodes"]
-        if self.slow_every and type(self).calls % self.slow_every == 0:
-            time.sleep(0.5)
-        payload = b"{}"
-        self.send_response(200 if ok else 401)
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, *args):
-        pass
-
-
-def test_wan_probe_records_ok_and_timeout(tmp_path) -> None:
-    _Handler.slow_every = 3
-    _Handler.calls = 0
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        url = f"http://127.0.0.1:{server.server_port}/optimize"
-        prober = wan_probe.Prober(url, "k", timeout_s=0.2)
-        out = tmp_path / "wan_trace.csv"
-        wan_probe.run(prober, out, interval_s=0.05, max_samples=6, duration_s=None, n_nodes=3)
-    finally:
-        server.shutdown()
-
-    with out.open(encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    assert list(rows[0]) == ["ts", "rtt_ms", "http_status", "timeout"]
-    assert len(rows) == 6
-    assert sum(r["timeout"] == "1" for r in rows) >= 1
-    assert sum(r["http_status"] == "200" for r in rows) >= 3
-    for r in rows:
-        if r["timeout"] == "1":
-            assert r["http_status"] == "0"

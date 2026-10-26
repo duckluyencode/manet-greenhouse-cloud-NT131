@@ -6,7 +6,9 @@
   "freq_hz": 2400000000.0,
   "antenna_height_m": 0.5,
   "tx_power_dbm": 20.0,
-  "rx_sensitivity_dbm": -88.0,
+  "tx_gain_dbi": 3.0,
+  "rx_gain_dbi": 3.0,
+  "rx_sensitivity_dbm": -82.0,
   "link_range_m": 29.35,
   "source": "Cama-Pinto et al. 2019, Table 2 fit as recorded in the project document (section 5.3); re-fit with --measurements to verify"
 }

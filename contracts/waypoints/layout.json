@@ -1,23 +1,31 @@
 {
   "greenhouse_m": [
     100.0,
-    50.0
+    100.0
   ],
   "aisle": {
-    "y_min": 0.0,
-    "y_max": 5.0,
-    "path_y": 2.5
+    "y_min": 47.5,
+    "y_max": 52.5,
+    "path_y": 50.0
   },
   "rails": {
-    "count": 56,
+    "count": 112,
+    "per_side": 56,
     "first_x": 0.9,
     "spacing_m": 1.8,
-    "y_start": 5.0,
-    "length_m": 45.0
+    "length_m": 47.5,
+    "north": {
+      "y_start": 52.5,
+      "y_end": 100.0
+    },
+    "south": {
+      "y_start": 47.5,
+      "y_end": 0.0
+    }
   },
   "gateway_xy": [
     50.0,
-    2.5
+    50.0
   ],
   "default_params": {
     "duration_s": 900.0,

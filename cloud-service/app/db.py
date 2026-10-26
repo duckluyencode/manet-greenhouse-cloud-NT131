@@ -5,12 +5,10 @@ Bảng:
 - runs          : metadata mỗi lần chạy mô phỏng (config_type, scenario, seed, params JSON)
 - metrics       : kết quả đo của 1 run (PDR, độ trễ, overhead, tìm đường, pin thấp nhất...)
 - cloud_events  : log sự kiện kênh cloud (param_update, outage_start, stale_detected, outage_end)
-- wan_trace     : số đo kênh Gateway -> AWS do scripts/wan_probe.py ghi
 """
 import json
 import os
 import sqlite3
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +23,10 @@ METRIC_COLUMNS = (
     "route_discovery_ms",
     "min_energy_pct",
     "cloud_bandwidth_bytes",
+    "loss_no_route_ratio",
+    "hops_avg",
+    "link_rssi_avg_dbm",
+    "weak_relay_share",
 )
 
 _SCHEMA = """
@@ -46,7 +48,11 @@ CREATE TABLE IF NOT EXISTS metrics (
     overhead_ratio REAL,
     route_discovery_ms REAL,
     min_energy_pct REAL,
-    cloud_bandwidth_bytes INTEGER
+    cloud_bandwidth_bytes INTEGER,
+    loss_no_route_ratio REAL,    -- gói dữ liệu bỏ vì không có đường / gói gửi
+    hops_avg REAL,               -- số hop trung bình của gói tới Gateway
+    link_rssi_avg_dbm REAL,      -- RSSI trung bình các link đã chở dữ liệu
+    weak_relay_share REAL        -- tỷ lệ lượt chuyển tiếp do robot pin < 30 %
 );
 CREATE TABLE IF NOT EXISTS cloud_events (
     run_id INTEGER REFERENCES runs(id),
@@ -54,18 +60,19 @@ CREATE TABLE IF NOT EXISTS cloud_events (
     event_type TEXT,             -- param_update | outage_start | stale_detected | outage_end
     payload TEXT
 );
-CREATE TABLE IF NOT EXISTS wan_trace (
-    ts REAL,
-    rtt_ms REAL,
-    http_status INTEGER,
-    timeout INTEGER
-);
 """
 
 # Cột thêm so với bản cũ; DB tạo từ bản cũ được bổ sung khi init_db().
 _ADDED_COLUMNS = {
     "runs": {"params": "TEXT"},
-    "metrics": {"route_discovery_ms": "REAL", "min_energy_pct": "REAL"},
+    "metrics": {
+        "route_discovery_ms": "REAL",
+        "min_energy_pct": "REAL",
+        "loss_no_route_ratio": "REAL",
+        "hops_avg": "REAL",
+        "link_rssi_avg_dbm": "REAL",
+        "weak_relay_share": "REAL",
+    },
 }
 
 
@@ -181,16 +188,6 @@ def save_cloud_event(
     conn.close()
 
 
-def save_wan_samples(samples: Iterable[tuple[float, float, int, int]]) -> int:
-    """Lưu các dòng (ts, rtt_ms, http_status, timeout); trả về số dòng đã ghi."""
-    rows = list(samples)
-    with get_conn() as conn:
-        conn.executemany(
-            "INSERT INTO wan_trace (ts, rtt_ms, http_status, timeout) VALUES (?, ?, ?, ?)",
-            rows,
-        )
-    conn.close()
-    return len(rows)
 
 
 def metrics_summary() -> list[dict[str, Any]]:

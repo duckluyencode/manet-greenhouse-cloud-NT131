@@ -94,9 +94,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ccache-${{ env.NS3_TAG }}-${{ hashFiles('simulation/**') }}
+          key: ccache-${{ env.NS3_TAG }}-release-${{ hashFiles('simulation/**') }}
           restore-keys: |
-            ccache-${{ env.NS3_TAG }}-
+            ccache-${{ env.NS3_TAG }}-release-
 
       - name: Clone ns-3
         run: git clone --depth 1 --branch "$NS3_TAG" https://gitlab.com/nsnam/ns-3-dev.git "$RUNNER_TEMP/ns-3-dev"
@@ -107,7 +107,7 @@ jobs:
       - name: Configure & build ns-3
         working-directory: ${{ runner.temp }}/ns-3-dev
         run: |
-          ./ns3 configure --build-profile=optimized --disable-examples --disable-tests \
+          ./ns3 configure --build-profile=release --disable-examples --disable-tests \
             --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim"
           ./ns3 build
           ccache --show-stats

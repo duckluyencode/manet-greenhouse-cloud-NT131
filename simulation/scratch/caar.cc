@@ -3,13 +3,13 @@
 //   no_cloud           AODV gốc (jitter U(0, 10) ms khi rebroadcast RREQ)
 //   local_optimized    delayed RREQ forwarding, trọng số cố định 0,4 / 0,3 / 0,3
 //   gateway_heuristic  Gateway tự chạy heuristic mục 7.2 mỗi T giây, không qua WAN
-//   cloud_assisted     Cloud chạy heuristic mỗi T giây; kênh WAN theo trace đo thật,
-//                      Gateway hạ cấp 3 mức + TTL khi lỗi (mục 7.3)
+//   cloud_assisted     Cloud chạy heuristic mỗi T giây qua kênh WAN (RTT hằng số,
+//                      mặc định 40 ms); Gateway hạ cấp 3 mức + TTL khi mất cloud (mục 7.3)
 //
 // Cài vào ns-3.48 bằng simulation/install.sh (áp patch AODV và chép vào scratch/caar/).
 //   ./ns3 run "caar --config=cloud_assisted --seed=1 --nodes=10
 //       --waypoints=contracts/waypoints/10_1.csv --channel=contracts/channel.json
-//       --wan-trace=contracts/wan_trace.csv --out=results/raw/cloud_assisted_baseline_1.csv"
+//       --out=results/raw/cloud_assisted_baseline_1.csv"
 //
 // Đầu ra: một dòng CSV theo hợp đồng contracts/README.md, và <out>_events.csv với
 // log Gateway (param_update, outage_start, stale_detected, outage_end).
@@ -77,8 +77,12 @@ constexpr double kRssiEwmaAlpha = 0.1;
 constexpr double kRssiFreshSeconds = 10.0;
 // RSSI dùng khi chưa từng nghe thấy hàng xóm: biên dưới của chuẩn hóa (r = 0).
 constexpr double kUnknownRssiDbm = -90.0;
-// Độ nhạy thu thấp nhất chấp nhận: nhiễu nền kênh 22 MHz (~-94 dBm) + 4 dB SNR preamble.
-constexpr double kMinRxSensitivityDbm = -90.0;
+// Ngưỡng thu thấp nhất chấp nhận: ngưỡng phát hiện preamble mặc định của ns-3 (-82 dBm).
+constexpr double kMinRxSensitivityDbm = -82.0;
+// Ngưỡng "robot yếu pin" khi đo ai chuyển tiếp gói (weak_relay_share).
+constexpr double kWeakBatteryPct = 30.0;
+// TTL robot gắn cho gói dữ liệu; Gateway suy ra số hop = kDataTtl + 1 - TTL nhận được.
+constexpr uint8_t kDataTtl = 64;
 
 struct LinkRssi
 {
@@ -92,13 +96,6 @@ struct Telemetry
     double energyPct;
     double rssiDbm;
     Time received;
-};
-
-struct WanSample
-{
-    double rttMs;
-    int httpStatus;
-    bool timeout;
 };
 
 struct GatewayEvent
@@ -138,10 +135,8 @@ std::vector<double> g_energyPct;
 std::vector<Ptr<Socket>> g_robotSockets;
 std::vector<uint32_t> g_seq;
 std::map<uint32_t, Telemetry> g_telemetry;
-std::vector<WanSample> g_wan;
 
 Ptr<UniformRandomVariable> g_jitterRv;
-Ptr<UniformRandomVariable> g_wanRv;
 
 // Bộ đếm cho metric
 uint64_t g_ipTx = 0;
@@ -151,6 +146,15 @@ uint64_t g_dataRxWindow = 0;
 uint64_t g_cloudBytes = 0;
 std::vector<double> g_delaysMs;
 std::vector<double> g_routeDiscoveryMs;
+
+// Phép đo cơ chế định tuyến (vì sao mất gói, đường được chọn ra sao, ai chuyển tiếp)
+uint64_t g_dataNoRouteDrops = 0; // gói dữ liệu bị bỏ vì không tìm được / mất đường
+std::vector<uint32_t> g_hops;    // số hop của gói dữ liệu tới Gateway
+double g_dataLinkRssiSum = 0;    // RSSI các khung dữ liệu unicast nhận thành công
+uint64_t g_dataLinkFrames = 0;
+uint64_t g_dataForwards = 0; // lượt robot chuyển tiếp gói dữ liệu
+uint64_t g_weakForwards = 0; // ... trong lúc pin robot dưới kWeakBatteryPct
+std::vector<Mac48Address> g_mac;
 std::vector<GatewayEvent> g_events;
 
 // ---------------------------------------------------------------------------
@@ -175,6 +179,13 @@ JsonNumber(const std::string& text, const std::string& key)
     NS_ABORT_MSG_IF(pos == std::string::npos, "missing key " << key);
     pos = text.find(':', pos);
     return std::strtod(text.c_str() + pos + 1, nullptr);
+}
+
+// Như JsonNumber nhưng trả giá trị mặc định khi thiếu khóa.
+double
+JsonNumberOr(const std::string& text, const std::string& key, double fallback)
+{
+    return text.find("\"" + key + "\"") == std::string::npos ? fallback : JsonNumber(text, key);
 }
 
 // Lấy mảng 2 số, ví dụ "gateway_xy": [50.0, 2.5].
@@ -231,28 +242,6 @@ ReadWaypoints(const std::string& path)
     return tracks;
 }
 
-// contracts/wan_trace.csv: ts, rtt_ms, http_status, timeout
-std::vector<WanSample>
-ReadWanTrace(const std::string& path)
-{
-    std::ifstream in(path);
-    NS_ABORT_MSG_IF(!in, "cannot open " << path);
-    std::vector<WanSample> rows;
-    std::string line;
-    std::getline(in, line);
-    while (std::getline(in, line))
-    {
-        auto c = SplitCsv(line);
-        if (c.size() < 4)
-        {
-            continue;
-        }
-        rows.push_back({std::stod(c[1]), std::stoi(c[2]), c[3] == "1"});
-    }
-    NS_ABORT_MSG_IF(rows.empty(), "empty WAN trace " << path);
-    return rows;
-}
-
 // ---------------------------------------------------------------------------
 // RSSI, pin, overhead
 // ---------------------------------------------------------------------------
@@ -281,6 +270,62 @@ OnSnifferRx(uint32_t self,
     link.avgDbm = link.seen ? (1 - kRssiEwmaAlpha) * link.avgDbm + kRssiEwmaAlpha * sample : sample;
     link.seen = true;
     link.last = Simulator::Now();
+
+    // Link thật sự chở dữ liệu: khung unicast gửi cho chính node này, mang gói UDP cổng dữ liệu.
+    if (hdr.GetAddr1() == g_mac[self])
+    {
+        Ptr<Packet> copy = packet->Copy();
+        copy->RemoveHeader(hdr);
+        LlcSnapHeader llc;
+        Ipv4Header ip;
+        UdpHeader udp;
+        if (copy->RemoveHeader(llc) && llc.GetType() == Ipv4L3Protocol::PROT_NUMBER &&
+            copy->RemoveHeader(ip) && ip.GetProtocol() == UdpL4Protocol::PROT_NUMBER &&
+            copy->PeekHeader(udp) && udp.GetDestinationPort() == kDataPort)
+        {
+            g_dataLinkRssiSum += sample;
+            ++g_dataLinkFrames;
+        }
+    }
+}
+
+// Gói (không còn header IP) có phải gói dữ liệu robot -> Gateway không.
+bool
+IsDataPayload(const Ipv4Header& ip, Ptr<const Packet> payload)
+{
+    UdpHeader udp;
+    return ip.GetProtocol() == UdpL4Protocol::PROT_NUMBER && payload->PeekHeader(udp) &&
+           udp.GetDestinationPort() == kDataPort;
+}
+
+// Gói dữ liệu bị IPv4 bỏ vì không có đường: AODV tìm đường thất bại, hàng đợi chờ
+// đường quá hạn, hoặc node trung gian mất đường (đều đi qua DROP_ROUTE_ERROR / NO_ROUTE).
+void
+OnIpDrop(const Ipv4Header& ip,
+         Ptr<const Packet> payload,
+         Ipv4L3Protocol::DropReason reason,
+         Ptr<Ipv4> /*ipv4*/,
+         uint32_t /*iface*/)
+{
+    if ((reason == Ipv4L3Protocol::DROP_NO_ROUTE || reason == Ipv4L3Protocol::DROP_ROUTE_ERROR) &&
+        IsDataPayload(ip, payload))
+    {
+        ++g_dataNoRouteDrops;
+    }
+}
+
+void
+OnIpForward(uint32_t self, const Ipv4Header& ip, Ptr<const Packet> payload, uint32_t /*iface*/)
+{
+    if (self == 0 || !IsDataPayload(ip, payload))
+    {
+        return;
+    }
+    ++g_dataForwards;
+    if (g_energyPct[self] < kWeakBatteryPct)
+    {
+        ++g_weakForwards;
+    }
 }
 
 // RSSI trung bình của các liên kết robot còn nghe thấy (giá trị rssi_avg của telemetry).
@@ -440,6 +485,11 @@ OnGatewayRecv(Ptr<Socket> socket)
         double rssi = int32_t(GetU32(buf + 20)) / 100.0;
         Time txTime = NanoSeconds(txNs);
         g_delaysMs.push_back((Simulator::Now() - txTime).GetSeconds() * 1000);
+        SocketIpTtlTag ttl;
+        if (packet->RemovePacketTag(ttl))
+        {
+            g_hops.push_back(kDataTtl + 1 - ttl.GetTtl());
+        }
         if (InWindow(txTime.GetSeconds()))
         {
             ++g_dataRxWindow;
@@ -525,16 +575,6 @@ OnCloudFailure(double callTime)
     LogEvents(g_gateway->OnFailure(callTime), "");
 }
 
-WanSample
-SampleWan()
-{
-    if (g_wan.empty())
-    {
-        return {g_wanConstantRttMs, 200, false};
-    }
-    return g_wan[g_wanRv->GetInteger(0, g_wan.size() - 1)];
-}
-
 void
 GatewayTick()
 {
@@ -550,9 +590,8 @@ GatewayTick()
     {
         g_cloudBytes += SnapshotBytes(snapshot);
         bool outage = t >= g_outageStart && t < g_outageEnd;
-        WanSample s = SampleWan();
-        Time rtt = MilliSeconds(s.rttMs);
-        if (outage || s.timeout || s.httpStatus != 200 || rtt >= g_cloudTimeout)
+        Time rtt = MilliSeconds(g_wanConstantRttMs);
+        if (outage || rtt >= g_cloudTimeout)
         {
             Simulator::Schedule(g_cloudTimeout, &OnCloudFailure, t);
         }
@@ -643,10 +682,10 @@ main(int argc, char* argv[])
     std::string waypointsPath;
     std::string layoutPath;
     std::string channelPath;
-    std::string wanTracePath;
     std::string outPath;
     std::string fixedWeights;
     std::string netanimPath;
+    bool destinationOnly = false;
     double netanimStart = 0;
     double netanimStop = -1;
 
@@ -664,8 +703,7 @@ main(int argc, char* argv[])
     cmd.AddValue("outage-end", "Kết thúc mất cloud (s)", g_outageEnd);
     cmd.AddValue("window-start", "Bắt đầu cửa sổ đo pdr_window (s)", g_windowStart);
     cmd.AddValue("window-end", "Kết thúc cửa sổ đo pdr_window (s)", g_windowEnd);
-    cmd.AddValue("wan-trace", "contracts/wan_trace.csv; bỏ trống = RTT hằng số", wanTracePath);
-    cmd.AddValue("wan-rtt-ms", "RTT hằng số khi không có trace (ms)", g_wanConstantRttMs);
+    cmd.AddValue("wan-rtt-ms", "RTT Gateway–Cloud (ms)", g_wanConstantRttMs);
     cmd.AddValue("waypoints", "contracts/waypoints/<N>_<seed>.csv", waypointsPath);
     cmd.AddValue("layout", "layout.json (mặc định: cạnh file waypoints)", layoutPath);
     cmd.AddValue("channel", "contracts/channel.json", channelPath);
@@ -676,6 +714,9 @@ main(int argc, char* argv[])
     cmd.AddValue("drain-move", "Hao pin khi di chuyển (%/s)", g_drainMovePctPerS);
     cmd.AddValue("drain-tx", "Hao pin mỗi gói IP phát (%)", g_drainTxPct);
     cmd.AddValue("netanim", "Ghi trace NetAnim ra file XML (trống = tắt)", netanimPath);
+    cmd.AddValue("destination-only",
+                 "Chỉ đích trả lời RREQ (AODV DestinationOnly); mặc định node trung gian có đường cũng trả lời",
+                 destinationOnly);
     cmd.AddValue("netanim-start", "Bắt đầu ghi gói tin cho NetAnim (s)", netanimStart);
     cmd.AddValue("netanim-stop", "Dừng ghi gói tin cho NetAnim (s), âm = tới cuối", netanimStop);
     cmd.Parse(argc, argv);
@@ -735,6 +776,8 @@ main(int argc, char* argv[])
     double refDist = JsonNumber(channel, "ref_dist_m");
     double txPowerDbm = JsonNumber(channel, "tx_power_dbm");
     double rxSensDbm = JsonNumber(channel, "rx_sensitivity_dbm");
+    double txGainDbi = JsonNumberOr(channel, "tx_gain_dbi", 0);
+    double rxGainDbi = JsonNumberOr(channel, "rx_gain_dbi", 0);
 
     if (layoutPath.empty())
     {
@@ -748,20 +791,7 @@ main(int argc, char* argv[])
     NS_ABORT_MSG_IF(tracks.size() != nodes,
                     "waypoints file has " << tracks.size() << " robots, --nodes=" << nodes);
 
-    std::string wanModel = "none";
-    if (g_config == SimConfig::kCloudAssisted)
-    {
-        if (wanTracePath.empty())
-        {
-            wanModel = "constant";
-            NS_LOG_UNCOND("WARNING: no --wan-trace, using constant RTT " << g_wanConstantRttMs << " ms");
-        }
-        else
-        {
-            g_wan = ReadWanTrace(wanTracePath);
-            wanModel = "trace";
-        }
-    }
+    std::string wanModel = g_config == SimConfig::kCloudAssisted ? "constant" : "none";
 
     // --- Node, mobility -------------------------------------------------------
     NodeContainer all;
@@ -806,14 +836,16 @@ main(int argc, char* argv[])
     phy.SetChannel(wifiChannel);
     phy.Set("TxPowerStart", DoubleValue(txPowerDbm));
     phy.Set("TxPowerEnd", DoubleValue(txPowerDbm));
+    phy.Set("TxGain", DoubleValue(txGainDbi));
+    phy.Set("RxGain", DoubleValue(rxGainDbi));
     phy.Set("RxSensitivity", DoubleValue(rxSensDbm));
-    // Mặc định ns-3 bỏ mọi khung dưới -82 dBm ở bước phát hiện preamble, bất kể
-    // RxSensitivity; đặt cùng ngưỡng để độ nhạy trong channel.json có hiệu lực.
-    // Ngưỡng sát nhiễu nền (~-94 dBm với kênh 22 MHz) làm PHY của ns-3.48 dừng với
-    // "Invalid WifiPhy state RX", nên chặn ở nhiễu nền + 4 dB (ngưỡng SNR preamble).
+    // ns-3 bỏ mọi khung dưới ngưỡng phát hiện preamble (mặc định -82 dBm), bất kể
+    // RxSensitivity; đặt cùng ngưỡng để độ nhạy trong channel.json có hiệu lực. Ngưỡng dưới
+    // -82 dBm làm PHY của ns-3.48 có lúc dừng với "Invalid WifiPhy state RX", nên muốn tầm
+    // xa hơn thì tăng công suất hoặc độ lợi anten.
     NS_ABORT_MSG_IF(rxSensDbm < kMinRxSensitivityDbm,
                     "rx_sensitivity_dbm " << rxSensDbm << " is below " << kMinRxSensitivityDbm
-                                          << " dBm (noise floor + 4 dB)");
+                                          << " dBm (ns-3 preamble detection threshold)");
     phy.SetPreambleDetectionModel("ns3::ThresholdPreambleDetectionModel",
                                   "MinimumRssi",
                                   DoubleValue(rxSensDbm));
@@ -831,6 +863,7 @@ main(int argc, char* argv[])
 
     // --- IP + AODV ---------------------------------------------------------------
     AodvHelper aodv;
+    aodv.Set("DestinationOnly", BooleanValue(destinationOnly));
     InternetStackHelper stack;
     stack.SetRoutingHelper(aodv);
     stack.Install(all);
@@ -844,8 +877,7 @@ main(int argc, char* argv[])
     stream += aodv.AssignStreams(all, stream);
     g_jitterRv = CreateObject<UniformRandomVariable>();
     g_jitterRv->SetStream(stream++);
-    g_wanRv = CreateObject<UniformRandomVariable>();
-    g_wanRv->SetStream(stream++);
+    stream++; // stream này để trống, giữ nguyên số stream của các biến phía sau (results/ tái tạo được)
     Ptr<UniformRandomVariable> energyRv = CreateObject<UniformRandomVariable>();
     energyRv->SetStream(stream++);
     Ptr<UniformRandomVariable> startRv = CreateObject<UniformRandomVariable>();
@@ -859,7 +891,8 @@ main(int argc, char* argv[])
     {
         g_ip.push_back(ifaces.GetAddress(i));
         g_ipToIdx[ifaces.GetAddress(i)] = i;
-        g_macToIdx[Mac48Address::ConvertFrom(devices.Get(i)->GetAddress())] = i;
+        g_mac.push_back(Mac48Address::ConvertFrom(devices.Get(i)->GetAddress()));
+        g_macToIdx[g_mac.back()] = i;
         if (i > 0)
         {
             g_energyPct[i] = energyRv->GetValue(20, 100); // mục 6.3: đều 20–100 %
@@ -868,9 +901,10 @@ main(int argc, char* argv[])
         Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice>(devices.Get(i));
         dev->GetPhy()->TraceConnectWithoutContext("MonitorSnifferRx",
                                                   MakeBoundCallback(&OnSnifferRx, i));
-        all.Get(i)->GetObject<Ipv4L3Protocol>()->TraceConnectWithoutContext(
-            "Tx",
-            MakeBoundCallback(&OnIpTx, i));
+        Ptr<Ipv4L3Protocol> ipv4 = all.Get(i)->GetObject<Ipv4L3Protocol>();
+        ipv4->TraceConnectWithoutContext("Tx", MakeBoundCallback(&OnIpTx, i));
+        ipv4->TraceConnectWithoutContext("Drop", MakeCallback(&OnIpDrop));
+        ipv4->TraceConnectWithoutContext("UnicastForward", MakeBoundCallback(&OnIpForward, i));
 
         Ptr<aodv::RoutingProtocol> routing =
             DynamicCast<aodv::RoutingProtocol>(all.Get(i)->GetObject<Ipv4>()->GetRoutingProtocol());
@@ -886,9 +920,11 @@ main(int argc, char* argv[])
     Ptr<Socket> sink = Socket::CreateSocket(all.Get(0), UdpSocketFactory::GetTypeId());
     sink->Bind(InetSocketAddress(Ipv4Address::GetAny(), kDataPort));
     sink->SetRecvCallback(MakeCallback(&OnGatewayRecv));
+    sink->SetIpRecvTtl(true); // để đếm số hop của gói tới Gateway
     for (uint32_t i = 1; i <= nodes; ++i)
     {
         g_robotSockets[i] = Socket::CreateSocket(all.Get(i), UdpSocketFactory::GetTypeId());
+        g_robotSockets[i]->SetIpTtl(kDataTtl);
         g_robotSockets[i]->Connect(InetSocketAddress(g_ip[0], kDataPort));
         Simulator::Schedule(g_appStart + Seconds(startRv->GetValue(0, 1)), &SendTelemetry, i);
     }
@@ -957,6 +993,19 @@ main(int argc, char* argv[])
     }
     double minEnergy = *std::min_element(g_energyPct.begin() + 1, g_energyPct.end());
     double pdrWindow = g_dataTxWindow ? double(g_dataRxWindow) / g_dataTxWindow : NAN;
+    double lossNoRoute = txPackets ? double(g_dataNoRouteDrops) / txPackets : NAN;
+    double hopsAvg = NAN;
+    if (!g_hops.empty())
+    {
+        double s = 0;
+        for (uint32_t h : g_hops)
+        {
+            s += h;
+        }
+        hopsAvg = s / g_hops.size();
+    }
+    double linkRssi = g_dataLinkFrames ? g_dataLinkRssiSum / g_dataLinkFrames : NAN;
+    double weakRelayShare = g_dataForwards ? double(g_weakForwards) / g_dataForwards : NAN;
 
     std::ostringstream params;
     params << "{\"dmax_ms\": " << Num(dmaxMs) << ", \"jitter_ms\": " << Num(jitterMs)
@@ -970,6 +1019,10 @@ main(int argc, char* argv[])
     {
         params << ", \"fixed_weights\": \"" << fixedWeights << "\"";
     }
+    if (destinationOnly)
+    {
+        params << ", \"destination_only\": true";
+    }
     params << ", \"wan_model\": \"" << wanModel << "\"";
     params << ", \"window_s\": [" << Num(g_windowStart) << ", " << Num(g_windowEnd) << "]";
     params << ", \"pdr_window\": " << (std::isnan(pdrWindow) ? "null" : Num(pdrWindow)) << "}";
@@ -978,10 +1031,13 @@ main(int argc, char* argv[])
     row << config << "," << scenario << "," << seed << "," << nodes << "," << Num(speed) << ","
         << CsvQuote(params.str()) << "," << NumOrEmpty(pdr) << "," << NumOrEmpty(avgDelayMs) << ","
         << NumOrEmpty(p95DelayMs) << "," << NumOrEmpty(overhead) << ","
-        << NumOrEmpty(routeDiscoveryMs) << "," << NumOrEmpty(minEnergy) << "," << g_cloudBytes;
+        << NumOrEmpty(routeDiscoveryMs) << "," << NumOrEmpty(minEnergy) << "," << g_cloudBytes << ","
+        << NumOrEmpty(lossNoRoute) << "," << NumOrEmpty(hopsAvg) << "," << NumOrEmpty(linkRssi) << ","
+        << NumOrEmpty(weakRelayShare);
     const std::string header =
         "config_type,scenario,seed,node_count,mobility_speed,params,pdr,avg_delay_ms,p95_delay_ms,"
-        "overhead_ratio,route_discovery_ms,min_energy_pct,cloud_bandwidth_bytes";
+        "overhead_ratio,route_discovery_ms,min_energy_pct,cloud_bandwidth_bytes,"
+        "loss_no_route_ratio,hops_avg,link_rssi_avg_dbm,weak_relay_share";
 
     if (outPath.empty())
     {
@@ -1005,7 +1061,9 @@ main(int argc, char* argv[])
     }
     std::cout << config << " seed=" << seed << " pdr=" << Num(pdr, 4) << " delay_ms="
               << Num(avgDelayMs, 4) << " overhead=" << Num(overhead, 4)
-              << " route_discovery_ms=" << Num(routeDiscoveryMs, 4) << " events=" << g_events.size()
+              << " route_discovery_ms=" << Num(routeDiscoveryMs, 4) << " no_route=" << Num(lossNoRoute, 3)
+              << " hops=" << Num(hopsAvg, 3) << " weak_relay=" << Num(weakRelayShare, 3)
+              << " events=" << g_events.size()
               << std::endl;
 
     Simulator::Destroy();

@@ -1,86 +1,42 @@
 # Changelog
 
-Định dạng dựa trên [Conventional Commits](https://www.conventionalcommits.org/) và [Keep a Changelog](https://keepachangelog.com/).  
-Versioning theo kế hoạch: `v0.1-alpha` → `v0.3-beta` → `v0.6` → `v1.0-final`.
-
----
+Định dạng theo [Keep a Changelog](https://keepachangelog.com/); commit theo
+[Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
-### Added — tích hợp NS-3 (ns-3.48)
+### Cloud service
+- `POST /optimize` nhận `NetworkSnapshot`, chọn trọng số bằng heuristic toàn mạng (mục 7.2,
+  `app/heuristic.py`); so sánh ngưỡng trong miền số nguyên/dBm để khớp tuyệt đối với bản C++
+- 4 model mục 9.3 với ràng buộc miền giá trị; `GET /metrics/summary`
+- Bảo mật: API key `X-API-Key` (từ chối khi chưa cấu hình), timestamp ±30 s, nonce tùy chọn;
+  HTTPS qua Caddy (`deploy/`)
+- SQLite: `runs` (có `params` JSON), `metrics` (gồm 4 cột đo cơ chế định tuyến), `cloud_events`
 
-- `simulation/aodv-patch/caar-delayed-rreq.patch`: hook thời gian chờ rebroadcast RREQ
-  (`SetRreqForwardDelayCallback`) và trace `RouteDiscovery`; không gắn hook thì AODV chạy như bản gốc
-- `simulation/scratch/caar.cc`: kịch bản 4 cấu hình, đọc `contracts/`, ghi CSV theo hợp đồng
-  và log sự kiện Gateway; `params.pdr_window` cho Q3
-- `simulation/install.sh`, `simulation/Dockerfile` (Ubuntu 24.04 + ns-3.48)
-- `scripts/check_ns3.py`: kiểm tra mục 14.3; CI job `ns3` build ns-3 và chạy kiểm tra này
-- `run_batch.sh` gọi chương trình `caar`, truyền `--speed`, chỉ truyền `--wan-trace` khi đã có trace
-- `ruff.toml`, pin `ruff==0.17.1` trong CI
-- NetAnim: `caar --netanim=<xml>` (robot đổi màu theo pin, Gateway theo mức hạ cấp); module `netanim` trong build
+### Mô phỏng (ns-3.48)
+- Patch AODV `simulation/aodv-patch/caar-delayed-rreq.patch`: hook thời gian chờ rebroadcast RREQ
+  và trace `RouteDiscovery`; không gắn hook thì AODV chạy như bản gốc
+- `simulation/scratch/caar.cc`: 4 cấu hình, kênh log-distance + shadowing, WiFi 802.11b,
+  quỹ đạo từ `contracts/waypoints`, máy trạng thái Gateway, kênh cloud RTT 40 ms, mất cloud,
+  4 phép đo cơ chế (mất gói do không có đường, số hop, RSSI link, chuyển tiếp bởi robot yếu pin),
+  `--destination-only`, xuất NetAnim
+- `simulation/caar-logic/caar_logic.h`: heuristic, chi phí c_i, máy trạng thái Gateway; parity với
+  bản Python qua `contracts/parity_cases.json`
+- Môi trường: nhà kính 1 ha, 112 hàng ray, radio WiFi 20 dBm + anten 3 dBi, ngưỡng −82 dBm (tầm ~29 m)
+- Cài đặt: `simulation/install.sh`, `simulation/Dockerfile`, `simulation/vm/` (Ubuntu 24.04 không Docker)
 
-### Changed
+### Phân tích
+- `scripts/`: sinh quỹ đạo, kênh, test vector; `run_batch.sh` (S1, S2a, S2b, S3, sens, diag);
+  `check_ns3.py` (mục 14.3); nhập SQLite; biểu đồ mean ± CI 95 % và `hypotheses.md`
+- `results/`: 280 run (S1, S2a, S2b, S3, chẩn đoán), biểu đồ và kết luận Q1–Q3
 
-- Radio mặc định WiFi 20 dBm / −88 dBm (tầm ~29 m) thay cho 16 / −82 dBm (~18 m): ở 18 m, 10 robot chỉ có
-  đường về Gateway ~19 % thời gian (lý do chi tiết: `docs/testing-report.md`, mục 14.3)
-- `caar` đặt ngưỡng phát hiện preamble bằng độ nhạy thu (ns-3 mặc định chặn ở −82 dBm), từ chối độ nhạy < −90 dBm
-
-### Added — phần Owner B theo tài liệu đồ án bản cập nhật (20/10/2026)
-
-- `/optimize` nhận `NetworkSnapshot` và chạy heuristic toàn mạng (mục 7.2) trong `app/heuristic.py`;
-  so sánh ngưỡng trong miền số nguyên/dBm theo quy ước chốt 22/10
-- 4 model mục 9.3 với ràng buộc miền giá trị (`NodeTelemetry`, `NetworkSnapshot`, `Weights`, `OptimizeResponse`)
-- `app/security.py`: API key `X-API-Key` (fail closed), timestamp ±30 s, nonce tùy chọn
-- `GET /metrics/summary`; SQLite thêm `runs.params`, `metrics.route_discovery_ms`,
-  `metrics.min_energy_pct`, bảng `wan_trace`; DB cũ được bổ sung cột tự động
-- Test API theo bảng 14.2 và test parity Python ↔ `contracts/parity_cases.json`
-- `contracts/`: `parity_cases.json`, `channel.json`, `waypoints/` (N ∈ {6,10,16,20} × seed 1..10, biến thể 1 m/s)
-- `simulation/caar-logic/caar_logic.h`: heuristic, chi phí c_i, thời gian chờ D_max·c_i, phương án dự phòng 4.5,
-  máy trạng thái Gateway 3 mức + TTL; `test_caar_logic.cpp` đọc parity_cases.json (g++, không cần NS-3)
-- `scripts/`: `gen_parity_cases.py`, `gen_waypoints.py`, `fit_channel.py`, `wan_probe.py`, `run_batch.sh`,
-  `import_ns3_results.py`, `plot_results.py`, `caar_stats.py` (CI 95%, Welch t-test) + pytest
-- `deploy/`: Docker Compose FastAPI + Caddy (HTTPS Let's Encrypt); `cloud-service/Dockerfile`
-- CI: job `logic` (parity_cases.json khớp script, parity g++, lint + test scripts)
+### CI
+- Job `test` (ruff + pytest cloud), `logic` (parity C++, test script), `ns3` (build ns-3.48 và
+  chạy `check_ns3.py`); `ruff.toml` với `ruff==0.17.1`
 
 ### Removed
+- Digital-Twin (`app/twin.py`) và `POST /detect` (ngoài phạm vi, mục 16)
 
-- `app/twin.py`, `POST /detect` (cắt khỏi phạm vi, mục 16); `pandas`, `scikit-learn` khỏi requirements
+## [0.1.0-alpha]
 
-### Fixed
-
-- `.gitignore` bỏ dòng `scratch/` (đang bỏ qua `simulation/scratch/caar.cc`), cho phép `.env.example`
-
-### Added (trước đó)
-
-- Khởi tạo cấu trúc repo từ template
-- Cloud-service skeleton: `/health` (hoạt động), `/optimize` (logic placeholder), `/detect` (stub)
-- SQLite schema: bảng `runs`, `metrics`, `cloud_events`
-- Digital-Twin stub module (`app/twin.py`)
-- CI cho cloud-service (`.github/workflows/cloud-service-ci.yml`)
-- Issue/PR templates
-- Docs đầy đủ: README, architecture, api-doc, dev-guide, srs, testing-report, user-guide
-- `.gitignore` cho Python + NS-3
-
----
-
-## [0.1.0-alpha] — Khởi tạo (Week 1-2)
-
-### Added
-
-- Repo structure theo Master Plan Section 14
-- FastAPI app với 3 endpoints placeholder
-- pytest suite: `test_health`, `test_optimize_returns_weights`, `test_detect_stub`
-- `requirements.txt`: fastapi, uvicorn, pydantic, pytest, httpx, pandas, scikit-learn
-
----
-
-## Kế hoạch các phiên bản tiếp theo
-
-| Phiên bản | Mốc | Nội dung chính |
-|-----------|-----|----------------|
-| `v0.2-alpha` | Week 3-4 | Logic weighted heuristic thật trong `/optimize` |
-| `v0.3-beta` | Week 4-5 | NS-3: mobility model + channel model + AODV baseline |
-| `v0.4-beta` | Week 5 | NS-3: cloud-assisted variant, graceful degradation |
-| `v0.5-beta` | Week 6 | Chạy mô phỏng S1–S3, thu thập metrics vào SQLite |
-| `v0.6` | Week 6-7 | Digital-Twin validation (sklearn), `/detect` logic thật |
-| `v1.0-final` | Week 8 | Tất cả kịch bản S1–S4 hoàn chỉnh, báo cáo đầy đủ |
+- Khung repo, FastAPI với `/health`, CI cloud-service, tài liệu ban đầu
