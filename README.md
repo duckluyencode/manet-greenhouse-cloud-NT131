@@ -42,7 +42,7 @@ graph TB
 Cloud chỉ quyết định 3 trọng số (w_h, w_r, w_e) cho toàn mạng; logic chọn đường nằm hoàn toàn ở
 robot. Mất cloud thì Gateway dùng trọng số cache, quá TTL thì về bộ cân bằng 0,4 / 0,3 / 0,3.
 
-## Kết quả (280 run, mỗi điểm 10 seed)
+## Kết quả (290 run, mỗi điểm 10 seed)
 
 | Câu | Giả thuyết | Kết quả |
 |---|---|---|

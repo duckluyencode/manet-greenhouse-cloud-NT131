@@ -8,8 +8,8 @@ Theo mục 14 của tài liệu đồ án.
 |---|---|---|---|
 | Unit/API cloud | pytest + TestClient (`cloud-service/tests/`) | CI mỗi push | 34 test pass |
 | Parity Python ↔ C++ | `contracts/parity_cases.json` + `simulation/caar-logic/test_caar_logic.cpp` | CI mỗi push | 704 kiểm tra pass |
-| Script phân tích | pytest (`scripts/tests/`) | CI mỗi push | 16 test pass |
-| Tính đúng mô phỏng | `scripts/check_ns3.py` trên ns-3.48 | CI job `ns3` mỗi push | 6 nhóm kiểm tra pass |
+| Script phân tích | pytest (`scripts/tests/`) | CI mỗi push | 18 test pass |
+| Tính đúng mô phỏng | `scripts/check_ns3.py` trên ns-3.48 | CI job `ns3` mỗi push | 7 nhóm kiểm tra pass |
 | Đầu-cuối | HTTPS tới EC2 ap-southeast-1 | Trước demo | 4/4 pass (bảng dưới) |
 
 ## Test case cloud (bảng 14.2) — `tests/test_api.py`
@@ -43,18 +43,20 @@ Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400
 - Tính chất mục 4.3: w_h = 1 cho thời gian chờ như nhau; pin yếu chờ lâu hơn; phương án dự phòng 4.5.
 - Độ nhạy của bộ test: đổi `>=` thành `>` ở ngưỡng f_low làm test báo 10 lỗi.
 
-## Tính đúng của mô phỏng (mục 14.3) — `scripts/check_ns3.py`
+## Tính đúng của mô phỏng (mục 14.3)
 
-- [x] w_h = 1: PDR local_optimized nằm trong CI 95 % của no_cloud (5 seed).
-- [x] Tầm liên kết 29,35 m với WiFi 20 dBm, anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm
-  (`contracts/channel.json`); với 10 robot/ha khoảng 50 % thời gian robot có đường về Gateway.
-- [x] Mọi waypoint nằm trên lối chính hoặc hàng ray, trong nhà kính 100 × 100 m.
-- [x] Mất cloud: log theo thứ tự outage_start → stale_detected (357 s, TTL 60 s) → outage_end;
-  không có param_update trong lúc mất cloud.
-- [x] Cùng seed chạy hai lần cho kết quả giống hệt.
-- [x] 4 cấu hình chạy được, CSV đúng hợp đồng, nhập được vào SQLite; NetAnim ghi đủ 3 mức Gateway.
-- [x] Phép đo cơ chế hợp lệ: mất gói do không có đường ≤ tổng mất gói, số hop ≥ 1,
-  RSSI link chở dữ liệu ≥ ngưỡng thu.
+| Kiểm tra | Kiểm bằng |
+|---|---|
+| w_h = 1: PDR local_optimized nằm trong CI 95 % của no_cloud (5 seed) | `check_ns3.py` nhóm 4 |
+| Mất cloud: log theo thứ tự outage_start → stale_detected (357 s, TTL 60 s) → outage_end; không có param_update trong lúc mất cloud | `check_ns3.py` nhóm 3 |
+| Cùng seed chạy hai lần cho kết quả giống hệt | `check_ns3.py` nhóm 2 |
+| 4 cấu hình chạy được, CSV đúng hợp đồng, nhập được vào SQLite | `check_ns3.py` nhóm 1, 5 |
+| Phép đo cơ chế hợp lệ: mất gói do không có đường ≤ tổng mất gói, số hop ≥ 1, RSSI link chở dữ liệu ≥ ngưỡng thu | `check_ns3.py` nhóm 1 |
+| NetAnim ghi đủ 3 mức Gateway và gói tin | `check_ns3.py` nhóm 6 |
+| Hook delayed RREQ có tác dụng: D_max 500 ms làm thời gian tìm đường dài hơn D_max 20 ms (766 → 1.141 ms ở seed 1) | `check_ns3.py` nhóm 7 |
+| Tầm liên kết 29,35 m với WiFi 20 dBm, anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm | `contracts/channel.json`, `test_contract_channel_json` |
+| Mọi waypoint nằm trên lối chính hoặc hàng ray, trong nhà kính 100 × 100 m | `test_committed_waypoint_files_are_valid` |
+| Kết nối hình học: robot có đường về Gateway 31 / 51 / 80 / 90 % thời gian với 6 / 10 / 16 / 20 robot | `scripts/connectivity.py` |
 
 ## Đầu-cuối trên AWS
 
@@ -69,7 +71,7 @@ Cloud service trên EC2 t3.micro (ap-southeast-1), HTTPS qua Caddy, gọi từ T
 
 ## Kết quả thí nghiệm
 
-280 run (S1, S2a, S2b, S3, chẩn đoán), mỗi điểm 10 seed; ns-3.48 profile `release`; nhà kính
+290 run (S1, S2a, S2b, S3, chẩn đoán), mỗi điểm 10 seed; ns-3.48 profile `release`; nhà kính
 1 ha; kênh cloud RTT 40 ms. Bảng đầy đủ: `results/figures/hypotheses.md`; biểu đồ trong
 `results/figures/`; CSV từng run trong `results/raw/`.
 
@@ -85,8 +87,9 @@ Cloud service trên EC2 t3.micro (ap-southeast-1), HTTPS qua Caddy, gọi từ T
 - Ở 20 robot/ha có xu hướng local_optimized cao hơn no_cloud (0,519 so với 0,483, p = 0,125),
   chưa có ý nghĩa thống kê.
 - Chẩn đoán: chỉ cho Gateway trả lời RREQ cũng không tạo khác biệt (p = 0,76 và 0,50). Hook
-  delayed RREQ có tác dụng (D_max = 500 ms làm thời gian tìm đường tăng 803 → 1.081 ms), nhưng
-  đường đi trung bình chỉ 1,4–1,7 hop nên ít khi có đường thay thế để chọn.
+  delayed RREQ có tác dụng: với 10 robot, D_max 500 ms làm thời gian tìm đường tăng từ 724 lên
+  1.098 ms (p < 0,001) mà PDR không đổi (0,550 và 0,544). Đường đi trung bình chỉ 1,4–1,7 hop
+  nên ít khi có đường thay thế để chọn.
 
 ## Chạy test
 
