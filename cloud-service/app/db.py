@@ -5,12 +5,10 @@ Bảng:
 - runs          : metadata mỗi lần chạy mô phỏng (config_type, scenario, seed, params JSON)
 - metrics       : kết quả đo của 1 run (PDR, độ trễ, overhead, tìm đường, pin thấp nhất...)
 - cloud_events  : log sự kiện kênh cloud (param_update, outage_start, stale_detected, outage_end)
-- wan_trace     : số đo kênh Gateway -> AWS do scripts/wan_probe.py ghi
 """
 import json
 import os
 import sqlite3
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -61,12 +59,6 @@ CREATE TABLE IF NOT EXISTS cloud_events (
     ts TEXT DEFAULT CURRENT_TIMESTAMP,
     event_type TEXT,             -- param_update | outage_start | stale_detected | outage_end
     payload TEXT
-);
-CREATE TABLE IF NOT EXISTS wan_trace (
-    ts REAL,
-    rtt_ms REAL,
-    http_status INTEGER,
-    timeout INTEGER
 );
 """
 
@@ -196,16 +188,6 @@ def save_cloud_event(
     conn.close()
 
 
-def save_wan_samples(samples: Iterable[tuple[float, float, int, int]]) -> int:
-    """Lưu các dòng (ts, rtt_ms, http_status, timeout); trả về số dòng đã ghi."""
-    rows = list(samples)
-    with get_conn() as conn:
-        conn.executemany(
-            "INSERT INTO wan_trace (ts, rtt_ms, http_status, timeout) VALUES (?, ?, ?, ?)",
-            rows,
-        )
-    conn.close()
-    return len(rows)
 
 
 def metrics_summary() -> list[dict[str, Any]]:

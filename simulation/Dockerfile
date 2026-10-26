@@ -23,8 +23,7 @@ WORKDIR /opt
 RUN git clone --depth 1 --branch ${NS3_TAG} https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
 
 # Profile release = optimized nhưng không có -march=native: file chạy dùng được trên mọi CPU
-# x86-64 và cùng seed cho cùng kết quả trên mọi máy (CI từng chết với SIGILL vì ccache lấy lại
-# file biên dịch -march=native từ một máy CPU khác).
+# x86-64 và cùng seed cho cùng kết quả trên mọi máy.
 # Mỗi luồng biên dịch module wifi cần ~1 GB RAM; tăng JOBS nếu Docker có nhiều RAM hơn.
 ARG JOBS=4
 ENV JOBS=${JOBS}

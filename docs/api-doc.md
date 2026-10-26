@@ -36,7 +36,7 @@ Swagger UI: `/docs` (nút **Authorize** để nhập `X-API-Key`) · ReDoc: `/re
 
 | Field | Kiểu | Ràng buộc |
 |---|---|---|
-| `run_id` | int | ID run (0 khi đo trace) |
+| `run_id` | int | ID run |
 | `timestamp` | float | Unix time hiện tại, lệch ≤ 30 s |
 | `nonce` | string \| null | Tùy chọn, 1–128 ký tự |
 | `nodes` | list[NodeTelemetry] | Ít nhất 1 node |

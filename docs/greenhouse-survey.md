@@ -44,17 +44,17 @@ Trang trại châu Âu và Bắc Mỹ lớn (vài ha tới hàng chục ha) như
 
 ## 4. Môi trường mô phỏng đã chọn
 
-| Thông số | Trước | Sau | Lý do |
-|---|---|---|---|
-| Diện tích | 100 × 50 m (0,5 ha) | **100 × 100 m (1 ha)** | Bằng nhà kính đo kênh (Cama-Pinto); khớp ngưỡng doanh nghiệp ở Lâm Đồng (≥ 0,9 ha); nhỏ hơn quy mô trang trại châu Âu/Bắc Mỹ nhưng bằng một khoang |
-| Lối chính | Ở mép, rộng 5 m | **Ở giữa** (y = 47,5–52,5 m), dài 100 m | Hành lang chính 100 m (Cama-Pinto); hành lang trung tâm có ví dụ thực tế |
-| Hàng ray | 56 hàng × 45 m, một phía | **112 hàng × 47,5 m, hai phía**, bước 1,8 m | Bước hàng của Cama-Pinto; độ dài cùng cỡ PATHoBot (34 m) |
-| Gateway | (50; 2,5) | **(50; 50)**, giữa lối chính | Mục 6.2 của tài liệu: Gateway ở giữa lối chính |
-| Số robot mặc định | 10 | 10 (giữ) | Đội hỗn hợp trên 1 ha: thu hoạch 4–6 + thụ phấn ~3,5 + tỉa lá/quét ~1 |
-| Quét số robot (S3) | 6, 10, 16, 20 | Giữ | 6 ≈ chỉ robot thu hoạch; 16–20 là đội dày |
-| Tốc độ trên ray | 0,2 m/s | Giữ | PATHoBot ~0,2 m/s (thêm nguồn) |
-| Tốc độ độ nhạy | 1 m/s | Giữ | Xe ray thương mại 1,0–1,17 m/s |
-| Radio | WiFi 20 dBm / −88 dBm | WiFi 20 dBm + anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm (cùng ngân sách 108 dB, tầm 29,35 m) | ns-3.48 crash khi ngưỡng < −82 dBm; xem `docs/testing-report.md`, mục 14.3 |
+| Thông số | Giá trị | Lý do |
+|---|---|---|
+| Diện tích | 100 × 100 m (1 ha) | Bằng nhà kính đo kênh (Cama-Pinto); khớp ngưỡng doanh nghiệp ở Lâm Đồng (≥ 0,9 ha); nhỏ hơn quy mô trang trại châu Âu/Bắc Mỹ nhưng bằng một khoang |
+| Lối chính | Ở giữa (y = 47,5–52,5 m), dài 100 m | Hành lang chính 100 m (Cama-Pinto); hành lang trung tâm có ví dụ thực tế |
+| Hàng ray | 112 hàng × 47,5 m, hai phía lối chính, bước 1,8 m | Bước hàng của Cama-Pinto; độ dài cùng cỡ PATHoBot (34 m) |
+| Gateway | (50; 50), giữa lối chính | Mục 6.2 của tài liệu đồ án |
+| Số robot mặc định | 10 | Đội hỗn hợp trên 1 ha: thu hoạch 4–6 + thụ phấn ~3,5 + tỉa lá/quét ~1 |
+| Quét số robot (S3) | 6, 10, 16, 20 | 6 ≈ chỉ robot thu hoạch; 16–20 là đội dày |
+| Tốc độ trên ray | 0,2 m/s | PATHoBot ~0,2 m/s |
+| Tốc độ cho kịch bản độ nhạy | 1 m/s | Xe ray thương mại 1,0–1,17 m/s |
+| Radio | WiFi 20 dBm, anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm (ngân sách 108 dB, tầm 29,35 m) | Ngưỡng thu bằng ngưỡng phát hiện preamble của ns-3.48; thấp hơn −82 dBm thì PHY của ns-3.48 có lúc dừng |
 
 Hệ quả đo được (kết nối hình học: robot có đường về Gateway, tầm 29,35 m, 3 seed):
 

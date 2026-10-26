@@ -3,13 +3,13 @@
 //   no_cloud           AODV gốc (jitter U(0, 10) ms khi rebroadcast RREQ)
 //   local_optimized    delayed RREQ forwarding, trọng số cố định 0,4 / 0,3 / 0,3
 //   gateway_heuristic  Gateway tự chạy heuristic mục 7.2 mỗi T giây, không qua WAN
-//   cloud_assisted     Cloud chạy heuristic mỗi T giây; kênh WAN theo trace đo thật,
-//                      Gateway hạ cấp 3 mức + TTL khi lỗi (mục 7.3)
+//   cloud_assisted     Cloud chạy heuristic mỗi T giây qua kênh WAN (RTT hằng số,
+//                      mặc định 40 ms); Gateway hạ cấp 3 mức + TTL khi mất cloud (mục 7.3)
 //
 // Cài vào ns-3.48 bằng simulation/install.sh (áp patch AODV và chép vào scratch/caar/).
 //   ./ns3 run "caar --config=cloud_assisted --seed=1 --nodes=10
 //       --waypoints=contracts/waypoints/10_1.csv --channel=contracts/channel.json
-//       --wan-trace=contracts/wan_trace.csv --out=results/raw/cloud_assisted_baseline_1.csv"
+//       --out=results/raw/cloud_assisted_baseline_1.csv"
 //
 // Đầu ra: một dòng CSV theo hợp đồng contracts/README.md, và <out>_events.csv với
 // log Gateway (param_update, outage_start, stale_detected, outage_end).
@@ -98,13 +98,6 @@ struct Telemetry
     Time received;
 };
 
-struct WanSample
-{
-    double rttMs;
-    int httpStatus;
-    bool timeout;
-};
-
 struct GatewayEvent
 {
     double ts;
@@ -142,10 +135,8 @@ std::vector<double> g_energyPct;
 std::vector<Ptr<Socket>> g_robotSockets;
 std::vector<uint32_t> g_seq;
 std::map<uint32_t, Telemetry> g_telemetry;
-std::vector<WanSample> g_wan;
 
 Ptr<UniformRandomVariable> g_jitterRv;
-Ptr<UniformRandomVariable> g_wanRv;
 
 // Bộ đếm cho metric
 uint64_t g_ipTx = 0;
@@ -249,28 +240,6 @@ ReadWaypoints(const std::string& path)
                                 Vector(std::stod(c[2]), std::stod(c[3]), 0.0));
     }
     return tracks;
-}
-
-// contracts/wan_trace.csv: ts, rtt_ms, http_status, timeout
-std::vector<WanSample>
-ReadWanTrace(const std::string& path)
-{
-    std::ifstream in(path);
-    NS_ABORT_MSG_IF(!in, "cannot open " << path);
-    std::vector<WanSample> rows;
-    std::string line;
-    std::getline(in, line);
-    while (std::getline(in, line))
-    {
-        auto c = SplitCsv(line);
-        if (c.size() < 4)
-        {
-            continue;
-        }
-        rows.push_back({std::stod(c[1]), std::stoi(c[2]), c[3] == "1"});
-    }
-    NS_ABORT_MSG_IF(rows.empty(), "empty WAN trace " << path);
-    return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -606,16 +575,6 @@ OnCloudFailure(double callTime)
     LogEvents(g_gateway->OnFailure(callTime), "");
 }
 
-WanSample
-SampleWan()
-{
-    if (g_wan.empty())
-    {
-        return {g_wanConstantRttMs, 200, false};
-    }
-    return g_wan[g_wanRv->GetInteger(0, g_wan.size() - 1)];
-}
-
 void
 GatewayTick()
 {
@@ -631,9 +590,8 @@ GatewayTick()
     {
         g_cloudBytes += SnapshotBytes(snapshot);
         bool outage = t >= g_outageStart && t < g_outageEnd;
-        WanSample s = SampleWan();
-        Time rtt = MilliSeconds(s.rttMs);
-        if (outage || s.timeout || s.httpStatus != 200 || rtt >= g_cloudTimeout)
+        Time rtt = MilliSeconds(g_wanConstantRttMs);
+        if (outage || rtt >= g_cloudTimeout)
         {
             Simulator::Schedule(g_cloudTimeout, &OnCloudFailure, t);
         }
@@ -724,7 +682,6 @@ main(int argc, char* argv[])
     std::string waypointsPath;
     std::string layoutPath;
     std::string channelPath;
-    std::string wanTracePath;
     std::string outPath;
     std::string fixedWeights;
     std::string netanimPath;
@@ -746,8 +703,7 @@ main(int argc, char* argv[])
     cmd.AddValue("outage-end", "Kết thúc mất cloud (s)", g_outageEnd);
     cmd.AddValue("window-start", "Bắt đầu cửa sổ đo pdr_window (s)", g_windowStart);
     cmd.AddValue("window-end", "Kết thúc cửa sổ đo pdr_window (s)", g_windowEnd);
-    cmd.AddValue("wan-trace", "contracts/wan_trace.csv; bỏ trống = RTT hằng số", wanTracePath);
-    cmd.AddValue("wan-rtt-ms", "RTT hằng số khi không có trace (ms)", g_wanConstantRttMs);
+    cmd.AddValue("wan-rtt-ms", "RTT Gateway–Cloud (ms)", g_wanConstantRttMs);
     cmd.AddValue("waypoints", "contracts/waypoints/<N>_<seed>.csv", waypointsPath);
     cmd.AddValue("layout", "layout.json (mặc định: cạnh file waypoints)", layoutPath);
     cmd.AddValue("channel", "contracts/channel.json", channelPath);
@@ -835,20 +791,7 @@ main(int argc, char* argv[])
     NS_ABORT_MSG_IF(tracks.size() != nodes,
                     "waypoints file has " << tracks.size() << " robots, --nodes=" << nodes);
 
-    std::string wanModel = "none";
-    if (g_config == SimConfig::kCloudAssisted)
-    {
-        if (wanTracePath.empty())
-        {
-            wanModel = "constant";
-            NS_LOG_UNCOND("WARNING: no --wan-trace, using constant RTT " << g_wanConstantRttMs << " ms");
-        }
-        else
-        {
-            g_wan = ReadWanTrace(wanTracePath);
-            wanModel = "trace";
-        }
-    }
+    std::string wanModel = g_config == SimConfig::kCloudAssisted ? "constant" : "none";
 
     // --- Node, mobility -------------------------------------------------------
     NodeContainer all;
@@ -897,9 +840,9 @@ main(int argc, char* argv[])
     phy.Set("RxGain", DoubleValue(rxGainDbi));
     phy.Set("RxSensitivity", DoubleValue(rxSensDbm));
     // ns-3 bỏ mọi khung dưới ngưỡng phát hiện preamble (mặc định -82 dBm), bất kể
-    // RxSensitivity; đặt cùng ngưỡng để độ nhạy trong channel.json có hiệu lực. Hạ ngưỡng
-    // dưới -82 dBm làm PHY của ns-3.48 thỉnh thoảng dừng với "Invalid WifiPhy state RX"
-    // (9/280 run ở -88 dBm), nên muốn tầm xa hơn thì tăng công suất hoặc độ lợi anten.
+    // RxSensitivity; đặt cùng ngưỡng để độ nhạy trong channel.json có hiệu lực. Ngưỡng dưới
+    // -82 dBm làm PHY của ns-3.48 có lúc dừng với "Invalid WifiPhy state RX", nên muốn tầm
+    // xa hơn thì tăng công suất hoặc độ lợi anten.
     NS_ABORT_MSG_IF(rxSensDbm < kMinRxSensitivityDbm,
                     "rx_sensitivity_dbm " << rxSensDbm << " is below " << kMinRxSensitivityDbm
                                           << " dBm (ns-3 preamble detection threshold)");
@@ -934,8 +877,7 @@ main(int argc, char* argv[])
     stream += aodv.AssignStreams(all, stream);
     g_jitterRv = CreateObject<UniformRandomVariable>();
     g_jitterRv->SetStream(stream++);
-    g_wanRv = CreateObject<UniformRandomVariable>();
-    g_wanRv->SetStream(stream++);
+    stream++; // stream này để trống, giữ nguyên số stream của các biến phía sau (results/ tái tạo được)
     Ptr<UniformRandomVariable> energyRv = CreateObject<UniformRandomVariable>();
     energyRv->SetStream(stream++);
     Ptr<UniformRandomVariable> startRv = CreateObject<UniformRandomVariable>();

@@ -10,13 +10,11 @@ Tham số kênh truyền log-distance cho NS-3 (mục 5) -> contracts/channel.js
 - Tầm liên kết: d_max = d0 · 10^((P_tx + G_tx + G_rx - S_rx - PL(d0)) / (10 n)) (mục 5.4).
 
 Radio mặc định: WiFi 802.11b 1 Mbps của robot, phát 20 dBm, anten 3 dBi ở mỗi đầu, ngưỡng
-thu -82 dBm, tức ngân sách liên kết 108 dB, tầm ~29 m. Robot dùng WiFi chứ không dùng radio
-802.15.4 đã đo (mục 1.1, 5.4); cặp 16 / -82 dBm không anten của tài liệu cho tầm ~18 m, khi
-đó với 10 robot khoảng 80 % thời gian robot không có đường về Gateway.
+thu -82 dBm, tức ngân sách liên kết 108 dB, tầm ~29 m ("vài chục mét", mục 1.1).
 
-Ngưỡng thu không được thấp hơn -82 dBm (ngưỡng phát hiện preamble mặc định của ns-3): hạ
-ngưỡng này làm PHY của ns-3.48 thỉnh thoảng dừng với "Invalid WifiPhy state RX" (9/280 run
-ở -88 dBm, 6/6 ở -94 dBm). Muốn tầm xa hơn thì tăng công suất hoặc độ lợi anten.
+Ngưỡng thu không được thấp hơn -82 dBm (ngưỡng phát hiện preamble mặc định của ns-3): dưới
+mức này PHY của ns-3.48 có lúc dừng với "Invalid WifiPhy state RX". Muốn tầm xa hơn thì tăng
+công suất hoặc độ lợi anten.
 
 Số đo: CSV có cột distance_m, path_loss_db, nhập tay từ Bảng 2 của
 Cama-Pinto et al. (2019). Repo chưa có file này; khi không truyền --measurements,
@@ -24,7 +22,6 @@ script dùng n, sigma đã ghi trong tài liệu đồ án (4,63 / 5,15 dB ở a
 và ghi rõ nguồn trong channel.json.
 
 Chạy: python scripts/fit_channel.py
-      python scripts/fit_channel.py --tx-power 16 --tx-gain 0 --rx-gain 0   # cặp số của tài liệu
       python scripts/fit_channel.py --measurements data/cama_pinto_table2_0.5m.csv
 """
 import argparse

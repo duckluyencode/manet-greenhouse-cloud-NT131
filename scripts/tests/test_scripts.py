@@ -6,9 +6,6 @@ import os
 import random
 import subprocess
 import sys
-import threading
-import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -16,7 +13,6 @@ import pytest
 import caar_stats
 import fit_channel
 import gen_waypoints
-import wan_probe
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 ROOT = SCRIPTS.parent
@@ -197,51 +193,3 @@ def test_import_and_plot_pipeline(tmp_path) -> None:
     assert "| Q1 |" in hyp and "Xác nhận" in hyp
     with (figs / "summary.csv").open(encoding="utf-8") as f:
         assert any(r["scenario"] == "baseline" for r in csv.DictReader(f))
-
-
-# --- wan_probe ----------------------------------------------------------------
-
-class _Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-    slow_every = 0
-    calls = 0
-
-    def do_POST(self):
-        type(self).calls += 1
-        body = self.rfile.read(int(self.headers["Content-Length"]))
-        snapshot = json.loads(body)
-        ok = self.headers.get("X-API-Key") == "k" and snapshot["nodes"]
-        if self.slow_every and type(self).calls % self.slow_every == 0:
-            time.sleep(0.5)
-        payload = b"{}"
-        self.send_response(200 if ok else 401)
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, *args):
-        pass
-
-
-def test_wan_probe_records_ok_and_timeout(tmp_path) -> None:
-    _Handler.slow_every = 3
-    _Handler.calls = 0
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        url = f"http://127.0.0.1:{server.server_port}/optimize"
-        prober = wan_probe.Prober(url, "k", timeout_s=0.2)
-        out = tmp_path / "wan_trace.csv"
-        wan_probe.run(prober, out, interval_s=0.05, max_samples=6, duration_s=None, n_nodes=3)
-    finally:
-        server.shutdown()
-
-    with out.open(encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    assert list(rows[0]) == ["ts", "rtt_ms", "http_status", "timeout"]
-    assert len(rows) == 6
-    assert sum(r["timeout"] == "1" for r in rows) >= 1
-    assert sum(r["http_status"] == "200" for r in rows) >= 3
-    for r in rows:
-        if r["timeout"] == "1":
-            assert r["http_status"] == "0"

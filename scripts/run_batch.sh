@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Chạy hàng loạt config × seed × tham số cho các kịch bản mục 10.2.
 #
-#   NS3_DIR=~/ns-3-dev scripts/run_batch.sh s1 s2a s2b      # tối thiểu để bảo vệ
+#   NS3_DIR=~/ns-3-dev scripts/run_batch.sh s1 s2a s2b
 #   NS3_DIR=~/ns-3-dev scripts/run_batch.sh all
 #   scripts/run_batch.sh --dry-run all                       # chỉ in lệnh
 #
@@ -10,10 +10,9 @@
 # Mỗi run ghi results/raw/<config>_<scenario>[_<biến thể>]_<seed>.csv; run đã có file thì bỏ qua,
 # nên chạy lại sau khi bị ngắt sẽ tiếp tục từ chỗ dừng.
 #
-# Chương trình NS-3: simulation/scratch/caar.cc, cài bằng simulation/install.sh. Tham số:
-#   --config --seed --nodes --dmax --ttl --outage-start --outage-end --wan-trace  (mục 13.5)
-#   --scenario --waypoints --channel --out --speed                                 (contracts/README.md)
-# --wan-trace chỉ được truyền khi contracts/wan_trace.csv đã có; chưa có thì caar dùng RTT hằng số.
+# Chương trình NS-3: simulation/scratch/caar.cc, cài bằng simulation/install.sh.
+# Tham số truyền cho caar: --config --scenario --seed --nodes --speed --waypoints --channel --out
+# --dmax --ttl --outage-start --outage-end (danh sách đầy đủ: simulation/README.md).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -51,9 +50,6 @@ run() {
   local waypoints="$CONTRACTS/waypoints/${nodes}_${seed}${wp_tag:+_$wp_tag}.csv"
   local args="caar --config=$config --scenario=$scenario --seed=$seed --nodes=$nodes --speed=$speed"
   args+=" --waypoints=$waypoints --channel=$CONTRACTS/channel.json --out=$out"
-  if [[ "$config" == "cloud_assisted" && -s "$CONTRACTS/wan_trace.csv" ]]; then
-    args+=" --wan-trace=$CONTRACTS/wan_trace.csv"
-  fi
   [[ $# -gt 0 ]] && args+=" $*"
 
   total=$((total + 1))

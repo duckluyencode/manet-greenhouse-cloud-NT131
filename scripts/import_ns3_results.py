@@ -1,7 +1,7 @@
 """
-Nhập kết quả mô phỏng NS-3 và trace WAN vào SQLite (mục 9.4, hợp đồng 12.3).
+Nhập kết quả mô phỏng NS-3 vào SQLite (mục 9.4, hợp đồng 12.3).
 
-Mỗi file results/raw/*.csv (trừ wan_trace.csv và *_events.csv) có một hoặc
+Mỗi file results/raw/*.csv (trừ *_events.csv) có một hoặc
 nhiều dòng với các cột:
     config_type, scenario, seed, node_count, mobility_speed, params,
     pdr, avg_delay_ms, p95_delay_ms, overhead_ratio, route_discovery_ms,
@@ -74,7 +74,7 @@ def import_events(path: Path, run_id: int) -> int:
 def import_results(raw_dir: Path) -> tuple[int, int]:
     imported = skipped = 0
     for path in sorted(raw_dir.glob("*.csv")):
-        if path.name == "wan_trace.csv" or path.stem.endswith("_events"):
+        if path.stem.endswith("_events"):
             continue
         with path.open(newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
@@ -92,31 +92,18 @@ def import_results(raw_dir: Path) -> tuple[int, int]:
     return imported, skipped
 
 
-def import_wan_trace(path: Path) -> int:
-    with path.open(newline="", encoding="utf-8") as f:
-        rows = [
-            (float(r["ts"]), float(r["rtt_ms"]), int(r["http_status"]), int(r["timeout"]))
-            for r in csv.DictReader(f)
-        ]
-    with db.get_conn() as conn:
-        conn.execute("DELETE FROM wan_trace")  # trace nhập lại thì thay toàn bộ
-    conn.close()
-    return db.save_wan_samples(rows)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Nhập CSV kết quả NS-3 vào SQLite")
     parser.add_argument("--raw", type=Path, default=ROOT / "results" / "raw")
     parser.add_argument("--db", type=Path, default=ROOT / "results" / "results.db")
-    parser.add_argument("--wan-trace", type=Path, help="wan_trace.csv để nhập vào bảng wan_trace")
     args = parser.parse_args()
 
     os.environ["CAAR_DB_PATH"] = str(args.db)
     db.init_db()
     imported, skipped = import_results(args.raw)
     print(f"runs: {imported} imported, {skipped} already in {args.db}")
-    if args.wan_trace:
-        print(f"wan_trace: {import_wan_trace(args.wan_trace)} rows")
 
 
 if __name__ == "__main__":
