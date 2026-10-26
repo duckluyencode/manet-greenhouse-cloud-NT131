@@ -30,7 +30,7 @@
 - `scripts/`: sinh quỹ đạo, kênh, test vector; `run_batch.sh` (S1, S2a, S2b, S3, sens, diag);
   `check_ns3.py` (mục 14.3, gồm kiểm tra hook D_max 500 ms); `connectivity.py` (kết nối hình học
   robot–Gateway); nhập SQLite; biểu đồ mean ± CI 95 % và `hypotheses.md`
-- `results/`: 290 run (S1, S2a, S2b, S3, chẩn đoán), biểu đồ và kết luận Q1–Q3
+- `results/`: 370 run (S1, S2a, S2b, S3, độ nhạy, chẩn đoán), biểu đồ và kết luận Q1–Q3
 
 ### CI
 - Job `test` (ruff + pytest cloud), `logic` (parity C++, test script), `ns3` (build ns-3.48 và

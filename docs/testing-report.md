@@ -71,7 +71,7 @@ Cloud service trên EC2 t3.micro (ap-southeast-1), HTTPS qua Caddy, gọi từ T
 
 ## Kết quả thí nghiệm
 
-290 run (S1, S2a, S2b, S3, chẩn đoán), mỗi điểm 10 seed; ns-3.48 profile `release`; nhà kính
+370 run (S1, S2a, S2b, S3, độ nhạy, chẩn đoán), mỗi điểm 10 seed; ns-3.48 profile `release`; nhà kính
 1 ha; kênh cloud RTT 40 ms. Bảng đầy đủ: `results/figures/hypotheses.md`; biểu đồ trong
 `results/figures/`; CSV từng run trong `results/raw/`.
 
@@ -86,6 +86,10 @@ Cloud service trên EC2 t3.micro (ap-southeast-1), HTTPS qua Caddy, gọi từ T
   gần như luôn có đường nhưng mất 46–50 % trên link (tranh chấp kênh, flood RREQ/HELLO).
 - Ở 20 robot/ha có xu hướng local_optimized cao hơn no_cloud (0,519 so với 0,483, p = 0,125),
   chưa có ý nghĩa thống kê.
+- Độ nhạy (10 robot): với D_max 5, 10, 20 ms, PDR của local_optimized là 0,536 / 0,522 / 0,523,
+  không khác no_cloud ở S1 (p = 0,54 / 0,89 / 0,87), nên kết luận Q1 không phụ thuộc D_max;
+  cloud_assisted bám sát local_optimized ở mọi D_max. Ở 1 m/s, PDR là 0,549 (local_optimized) và
+  0,558 (cloud_assisted); kịch bản này không chạy no_cloud nên không kiểm Q1 ở tốc độ đó.
 - Chẩn đoán: chỉ cho Gateway trả lời RREQ cũng không tạo khác biệt (p = 0,76 và 0,50). Hook
   delayed RREQ có tác dụng: với 10 robot, D_max 500 ms làm thời gian tìm đường tăng từ 724 lên
   1.098 ms (p < 0,001) mà PDR không đổi (0,550 và 0,544). Đường đi trung bình chỉ 1,4–1,7 hop
