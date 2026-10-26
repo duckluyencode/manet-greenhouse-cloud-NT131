@@ -42,9 +42,12 @@ echo
 echo "Kết quả (CSV):   $OUT_DIR/$NAME.csv"
 [[ -f "$OUT_DIR/${NAME}_events.csv" ]] && echo "Log Gateway:     $OUT_DIR/${NAME}_events.csv"
 echo "Trace NetAnim:   $OUT_DIR/$NAME.xml"
-echo "Trong NetAnim: File > Open > chọn file .xml ở trên, rồi bấm nút Play (▶)."
-echo "  Robot: xanh lá = pin đầy, đỏ = pin yếu. Gateway: xanh dương L1, cam L2, đỏ L3 (mất cloud)."
-echo "  Gói tin chỉ được vẽ trong khoảng ${START}–${STOP} s; kéo thanh thời gian tới đó."
+echo "Trong NetAnim:"
+echo "  1. Bấm biểu tượng thư mục (góc trên bên trái), chọn file .xml ở trên."
+echo "  2. Gõ ${START} vào ô Pause At, kéo thanh fast–slow hết về fast, bấm ▶: chạy nhanh tới ${START} s rồi dừng."
+echo "  3. Kéo thanh fast–slow về giữa, bấm ▶: gói tin hiện thành mũi tên xanh từ robot gửi tới các node nhận."
+echo "  Robot: xanh lá = pin đầy, đỏ = pin yếu. Gateway: xanh dương L1, cam L2 (từ giây 302), đỏ L3 (giây 357)."
+echo "  Gói tin chỉ được ghi trong khoảng ${START}–${STOP} s; kéo thanh Sim time thì NetAnim bỏ qua không vẽ gói."
 
 if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" && -x "$NETANIM_DIR/NetAnim" ]]; then
   ("$NETANIM_DIR/NetAnim" >/dev/null 2>&1 &)

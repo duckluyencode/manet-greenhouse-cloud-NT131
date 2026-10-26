@@ -125,6 +125,8 @@ double g_wanConstantRttMs = 40;
 caar::Weights g_activeWeights = caar::BalancedWeights();
 caar::GatewayState* g_gateway = nullptr;
 AnimationInterface* g_anim = nullptr;
+std::ostringstream g_animPositions; // bản ghi <nu p="p"> tự ghi, chèn vào file NetAnim khi kết thúc
+std::vector<Vector> g_animLastPos;
 
 std::vector<Ptr<Node>> g_nodes; // 0 = Gateway, 1..N = robot
 std::vector<Ipv4Address> g_ip;
@@ -663,6 +665,41 @@ NumOrEmpty(double v)
     return std::isnan(v) ? "" : Num(v);
 }
 
+// Vị trí robot cho NetAnim, mỗi giây trong cả lượt chạy. AnimationInterface chỉ ghi vị trí trong
+// cửa sổ --netanim-start..stop, và cả trong cửa sổ cũng bỏ sót phần lớn: mỗi lần node gửi gói nó
+// cập nhật vị trí đã lưu mà không ghi ra file.
+void
+RecordAnimPositions()
+{
+    for (uint32_t i = 1; i <= g_nRobots; ++i)
+    {
+        Vector p = g_nodes[i]->GetObject<MobilityModel>()->GetPosition();
+        if (Simulator::Now().IsZero() || CalculateDistance(p, g_animLastPos[i]) > 0.01)
+        {
+            g_animPositions << "<nu p=\"p\" t=\"" << Num(Simulator::Now().GetSeconds(), 7) << "\" id=\""
+                            << g_nodes[i]->GetId() << "\" x=\"" << Num(p.x) << "\" y=\"" << Num(p.y)
+                            << "\" />\n";
+            g_animLastPos[i] = p;
+        }
+    }
+    Simulator::Schedule(Seconds(1), &RecordAnimPositions);
+}
+
+// Chèn các bản ghi vị trí vào file NetAnim, sau khi AnimationInterface đã ghi </anim> và đóng file.
+void
+WriteAnimPositions(const std::string& path)
+{
+    std::ifstream in(path);
+    std::stringstream buf;
+    buf << in.rdbuf();
+    in.close();
+    std::string xml = buf.str();
+    std::size_t end = xml.rfind("</anim>");
+    NS_ABORT_MSG_IF(end == std::string::npos, "incomplete NetAnim file " << path);
+    xml.insert(end, g_animPositions.str());
+    std::ofstream(path) << xml;
+}
+
 } // namespace
 
 int
@@ -954,6 +991,8 @@ main(int argc, char* argv[])
             anim->UpdateNodeSize(g_nodes[i]->GetId(), 2, 2);
         }
         UpdateAnimation();
+        g_animLastPos.assign(nodes + 1, Vector());
+        RecordAnimPositions();
     }
 
     FlowMonitorHelper flowHelper;
@@ -1067,5 +1106,11 @@ main(int argc, char* argv[])
               << std::endl;
 
     Simulator::Destroy();
+    if (anim)
+    {
+        anim.reset(); // ghi </anim> và đóng file
+        g_anim = nullptr;
+        WriteAnimPositions(netanimPath);
+    }
     return 0;
 }

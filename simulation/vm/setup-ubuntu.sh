@@ -4,7 +4,7 @@
 #   2. ns-3.48 vào ~/ns-3-dev
 #   3. patch AODV delayed RREQ + kịch bản scratch/caar (simulation/install.sh)
 #   4. build ns-3 (profile release)
-#   5. trình xem NetAnim 3.109 vào ~/netanim
+#   5. trình xem NetAnim 3.109 vào ~/netanim, kèm netanim-wpr.patch để vẽ được gói wifi
 #
 # Chạy từ thư mục repo:   bash simulation/vm/setup-ubuntu.sh
 # Đổi nơi cài:            NS3_DIR=~/ns3 NETANIM_DIR=~/na bash simulation/vm/setup-ubuntu.sh
@@ -29,9 +29,14 @@ JOBS="${JOBS:-$(( mem_gb * 2 / 3 ))}"
 (( JOBS > $(nproc) )) && JOBS=$(nproc)
 
 step "1/5 Cài gói hệ thống"
-$SUDO apt-get update
-$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  g++ cmake ninja-build python3 git patch ccache make qtbase5-dev qt5-qmake
+# libqt5svg5: biểu tượng trên thanh công cụ NetAnim là ảnh SVG.
+PACKAGES="g++ cmake ninja-build python3 git patch ccache make qtbase5-dev qt5-qmake libqt5svg5"
+if dpkg -s $PACKAGES >/dev/null 2>&1; then
+  echo "đã có, bỏ qua"
+else
+  $SUDO apt-get update
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y $PACKAGES
+fi
 echo "g++   $(g++ -dumpfullversion)   (cần >= 11)"
 echo "cmake $(cmake --version | head -1 | awk '{print $3}')   (cần >= 3.25)"
 echo "RAM ${mem_gb} GB, CPU $(nproc) -> build ${JOBS} luồng song song"
@@ -52,10 +57,17 @@ cd "$NS3_DIR"
 ./ns3 build -j "$JOBS"
 
 step "5/5 Build trình xem NetAnim ($NETANIM_TAG) vào $NETANIM_DIR"
+[[ -d "$NETANIM_DIR" ]] || git clone --depth 1 --branch "$NETANIM_TAG" https://gitlab.com/nsnam/netanim.git "$NETANIM_DIR"
+# NetAnim 3.109 đọc bản ghi gói wifi <pr> + <wpr> của ns-3 nhưng không vẽ; patch cho nó vẽ.
+if grep -q "CAAR:" "$NETANIM_DIR/animxmlparser.cpp"; then
+  echo "patch gói wifi đã áp"
+else
+  patch -d "$NETANIM_DIR" -p1 < "$REPO/simulation/vm/netanim-wpr.patch"
+  rm -f "$NETANIM_DIR/NetAnim"
+fi
 if [[ -x "$NETANIM_DIR/NetAnim" ]]; then
   echo "đã có, bỏ qua"
 else
-  [[ -d "$NETANIM_DIR" ]] || git clone --depth 1 --branch "$NETANIM_TAG" https://gitlab.com/nsnam/netanim.git "$NETANIM_DIR"
   (cd "$NETANIM_DIR" && qmake NetAnim.pro && make -j "$(nproc)")
 fi
 

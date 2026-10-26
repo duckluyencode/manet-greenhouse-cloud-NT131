@@ -7,6 +7,7 @@
 | `caar-logic/caar_logic.h` | Heuristic, chi phí c_i, máy trạng thái Gateway (C++ thuần, có parity test) |
 | `install.sh` | Áp patch (bỏ qua nếu đã áp) và chép `caar.cc` + `caar_logic.h` vào `scratch/caar/` |
 | `vm/setup-ubuntu.sh`, `vm/demo.sh` | Cài và chạy trên Ubuntu 24.04, xem bằng NetAnim |
+| `vm/netanim-wpr.patch` | Cho NetAnim 3.109 vẽ được gói wifi của ns-3 |
 | `Dockerfile` | Ubuntu 24.04 + ns-3.48 đã cài CAAR |
 
 ## Cài trên Ubuntu 24.04 (máy ảo hoặc máy thật)
@@ -93,18 +94,28 @@ cd ~/ns-3-dev
 ## Xem mô phỏng bằng NetAnim
 
 `caar --netanim=<file.xml>` ghi trace NetAnim. Robot đổi màu theo pin (xanh lá → đỏ, nhãn
-`r3 57%`), Gateway đổi màu theo mức hạ cấp (xanh dương L1 → cam L2 → đỏ L3). Vị trí robot được ghi
-cả 900 s; gói tin chỉ ghi trong `--netanim-start`..`--netanim-stop` để file không quá lớn
-(30 s ≈ 1 MB). File XML không được commit.
+`r3 57%`), Gateway đổi màu theo mức hạ cấp (xanh dương L1 → cam L2 → đỏ L3). Gói tin chỉ ghi
+trong `--netanim-start`..`--netanim-stop` để file không quá lớn (30 s ≈ 1 MB). Vị trí robot do
+`caar` tự ghi mỗi giây trong cả lượt chạy: AnimationInterface của ns-3.48 chỉ ghi vị trí trong cửa
+sổ ghi gói, và cả trong đó cũng bỏ sót vì mỗi lần node gửi gói nó cập nhật vị trí đã lưu mà không
+ghi ra file. File XML không được commit.
 
-Trình xem NetAnim 3.109 khớp phiên bản trace (`ver="netanim-3.109"`), không cần ns-3; mở bằng
-File > Open, rồi bấm Play. `setup-ubuntu.sh` đã build sẵn; build tay:
+Trình xem NetAnim 3.109 khớp phiên bản trace (`ver="netanim-3.109"`), không cần ns-3.
+NetAnim 3.109 đọc bản ghi gói wifi `<pr>` + `<wpr>` của ns-3 nhưng không vẽ;
+`vm/netanim-wpr.patch` sửa phần đọc file để vẽ được. `setup-ubuntu.sh` đã áp patch và build sẵn;
+build tay:
 
 ```bash
-sudo apt install qtbase5-dev qt5-qmake g++ make git
+sudo apt install qtbase5-dev qt5-qmake libqt5svg5 g++ make git patch
 git clone --depth 1 --branch netanim-3.109 https://gitlab.com/nsnam/netanim.git ~/netanim
+patch -d ~/netanim -p1 < simulation/vm/netanim-wpr.patch
 cd ~/netanim && qmake NetAnim.pro && make -j4
 ```
+
+Xem gói tin: mở file bằng biểu tượng thư mục; gõ thời điểm bắt đầu cửa sổ (ví dụ 290) vào
+Pause At, kéo thanh fast–slow về fast và bấm Play để chạy nhanh tới đó; rồi kéo thanh về giữa và bấm
+Play. Mỗi gói hiện trong một bước phát. Kéo thanh Sim time là tua nhanh, NetAnim không vẽ gói trong
+đoạn tua.
 
 ## Kiểm tra (mục 14.3)
 

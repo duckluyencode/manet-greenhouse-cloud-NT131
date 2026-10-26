@@ -1,0 +1,13 @@
+--- a/animxmlparser.cpp
++++ b/animxmlparser.cpp
+@@ -220,8 +220,9 @@
+           parsedElement.packetrx_fbTx = ref.packetrx_fbTx;
+           parsedElement.packetrx_lbTx = ref.packetrx_lbTx;
+           parsedElement.meta_info = ref.meta_info;
+-          break;
+         }
++        // CAAR: ns-3 writes wireless packets as <pr> + <wpr> references; animate them like <wpacket>
++        // fall through
+         case XML_WPACKET_RX:
+         case XML_PACKET_RX:
+         {

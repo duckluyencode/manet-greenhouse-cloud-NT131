@@ -17,17 +17,25 @@ bash simulation/vm/demo.sh
 `demo.sh [config] [scenario] [seed] [số robot]` (mặc định `cloud_assisted outage 1 10`) chạy một
 kịch bản 900 s, ghi `results/demo/<tên>.csv` và trace `results/demo/<tên>.xml`, rồi mở NetAnim.
 
-Trong NetAnim: File > Open, chọn file `.xml`, bấm Play.
+Trong NetAnim:
+
+1. Bấm biểu tượng thư mục ở góc trên bên trái, chọn file `.xml`.
+2. Gõ `290` vào ô **Pause At**, kéo thanh **fast–slow** hết về fast, bấm ▶. NetAnim chạy nhanh tới
+   290 s rồi dừng.
+3. Kéo thanh fast–slow về giữa, bấm ▶. Mỗi gói tin hiện thành mũi tên xanh từ robot gửi tới các node
+   nhận, kèm vòng tròn tầm phát.
+
+Gói tin chỉ được ghi trong khoảng 290–320 s (quanh lúc mất Cloud ở giây 300). Kéo thanh Sim time là
+tua nhanh, NetAnim không vẽ gói trong đoạn tua.
 
 | Màu | Ý nghĩa |
 |---|---|
 | Robot xanh lá → đỏ | Pin còn nhiều → ít (nhãn `r3 57%`) |
 | Gateway xanh dương | Mức 1: trọng số từ Cloud |
-| Gateway cam | Mức 2: mất Cloud, dùng trọng số cache |
-| Gateway đỏ | Mức 3: cache quá TTL, dùng bộ cân bằng |
+| Gateway cam | Mức 2: mất Cloud, dùng trọng số cache (từ giây 302) |
+| Gateway đỏ | Mức 3: cache quá TTL, dùng bộ cân bằng (giây 357) |
 
-Gói tin chỉ được vẽ trong khoảng 290–320 s (quanh lúc mất Cloud ở giây 300); kéo thanh thời
-gian tới đó. Tham số của `caar`: [`simulation/README.md`](../simulation/README.md).
+Tham số của `caar`: [`simulation/README.md`](../simulation/README.md).
 
 ## 2. Chạy toàn bộ thí nghiệm
 
