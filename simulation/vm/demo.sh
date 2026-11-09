@@ -48,6 +48,7 @@ echo "Trace NetAnim:   $OUT_DIR/$NAME.xml"
 if [[ -n "$SCENE" ]]; then
   echo "Cảnh 3D:         $SCENE"
   echo "  Mở bằng trình xem NetSimulyzer: File > Load, chọn file .json (simulation/README.md mục Xem 3D)."
+  echo "  Khung thép, kính, cây: chép $REPO/simulation/netsimulyzer/models/caar vào resources/models/ của trình xem."
 fi
 echo "Trong NetAnim:"
 echo "  1. Bấm biểu tượng thư mục (góc trên bên trái), chọn file .xml ở trên."

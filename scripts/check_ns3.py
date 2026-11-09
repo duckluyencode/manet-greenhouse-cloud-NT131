@@ -14,7 +14,8 @@ Kiểm tra:
    có gói wifi trong cửa sổ ghi gói và vị trí robot cả ngoài cửa sổ đó.
 7. Hook delayed RREQ có tác dụng: khi chỉ Gateway trả lời RREQ, D_max 500 ms làm thời gian
    tìm đường dài hơn D_max 20 ms ít nhất 20 %.
-8. --netsimulyzer (chỉ khi ns-3 có contrib/netsimulyzer): cảnh 3D có nhà kính, 11 node, đường
+8. --netsimulyzer (chỉ khi ns-3 có contrib/netsimulyzer): cảnh 3D có nhà kính (nền, ray, khung
+   thép, kính, hàng cà chua), 11 node, đường
    AODV, biểu đồ và log Gateway; CSV và log Gateway giống hệt lượt chạy không bật 3D.
 
 Chạy: python scripts/check_ns3.py --ns3 /opt/ns-3-dev --out /tmp/caar-check [--seeds 5]
@@ -201,6 +202,10 @@ def main() -> None:
         check(len(scene.get("areas", [])) == 2 + 2 * layout["rails"]["per_side"],
               f"greenhouse floor, aisle and {2 * layout['rails']['per_side']} rails drawn")
         check(len(scene.get("nodes", [])) == 11, "Gateway and 10 robots in the scene")
+        models = [d["model"] for d in scene.get("decorations", [])]
+        check(models.count("models/caar/plant_row.obj") == 2 * (layout["rails"]["per_side"] - 1)
+              and "models/caar/frame.obj" in models and "models/caar/glass.obj" in models,
+              f"steel frame, glass and {2 * (layout['rails']['per_side'] - 1)} tomato rows placed")
         kinds = [e["type"] for e in scene.get("events", [])]
         check("logical-link-create" in kinds and "logical-link-update" in kinds, "AODV route links drawn")
         charts = {"PDR (khung 10 s)", "Robot có đường AODV về Gateway", "Pin thấp nhất (%)",

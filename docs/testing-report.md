@@ -53,7 +53,7 @@ Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400
 | 4 cấu hình chạy được, CSV đúng hợp đồng, nhập được vào SQLite | `check_ns3.py` nhóm 1, 5 |
 | Phép đo cơ chế hợp lệ: mất gói do không có đường ≤ tổng mất gói, số hop ≥ 1, RSSI link chở dữ liệu ≥ ngưỡng thu | `check_ns3.py` nhóm 1 |
 | NetAnim ghi đủ 3 mức Gateway, gói tin trong cửa sổ ghi gói và vị trí robot cả ngoài cửa sổ | `check_ns3.py` nhóm 6 |
-| Cảnh 3D NetSimulyzer có nhà kính (114 vùng), 11 node, đường AODV, 4 biểu đồ, log mất cloud; CSV và log Gateway giống hệt lượt chạy không bật 3D | `check_ns3.py` nhóm 8 (máy có module NetSimulyzer; CI bỏ qua) |
+| Cảnh 3D NetSimulyzer có nhà kính (114 vùng, khung thép, kính, 110 hàng cà chua), 11 node, đường AODV, 4 biểu đồ, log mất cloud; CSV và log Gateway giống hệt lượt chạy không bật 3D | `check_ns3.py` nhóm 8 (máy có module NetSimulyzer; CI bỏ qua) |
 | Hook delayed RREQ có tác dụng: D_max 500 ms làm thời gian tìm đường dài hơn D_max 20 ms (766 → 1.141 ms ở seed 1) | `check_ns3.py` nhóm 7 |
 | Tầm liên kết 29,35 m với WiFi 20 dBm, anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm | `contracts/channel.json`, `test_contract_channel_json` |
 | Mọi waypoint nằm trên lối chính hoặc hàng ray, trong nhà kính 100 × 100 m | `test_committed_waypoint_files_are_valid` |

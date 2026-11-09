@@ -702,7 +702,19 @@ VizArea(const Rectangle& bounds,
 }
 
 void
-SetupViz(const std::string& path, const std::string& layout, double duration, bool gatewayLevels)
+VizDecoration(const std::string& model, const Vector3D& position)
+{
+    auto d = CreateObject<netsimulyzer::Decoration>(g_viz->orchestrator);
+    d->SetAttribute("Model", StringValue(model));
+    d->SetPosition(position);
+}
+
+void
+SetupViz(const std::string& path,
+         const std::string& layout,
+         double duration,
+         bool gatewayLevels,
+         bool environment)
 {
     g_viz = std::make_unique<Viz>();
     Viz& v = *g_viz;
@@ -723,6 +735,20 @@ SetupViz(const std::string& path, const std::string& layout, double duration, bo
         double x = firstX + k * spacing;
         VizArea(Rectangle(x - 0.15, x + 0.15, aisleMax, depth), {110, 110, 110}, 0.04, "Ray", false);
         VizArea(Rectangle(x - 0.15, x + 0.15, 0, aisleMin), {110, 110, 110}, 0.04, "Ray", false);
+    }
+    // Khung thép, kính và hàng cà chua giữa mỗi cặp ray: mô hình OBJ trong
+    // simulation/netsimulyzer/models/caar/ (scripts/gen_greenhouse_models.py), chép vào
+    // resources/models/caar/ của trình xem.
+    if (environment)
+    {
+        VizDecoration("models/caar/frame.obj", Vector3D(0, 0, 0));
+        VizDecoration("models/caar/glass.obj", Vector3D(0, 0, 0));
+        for (int k = 0; k + 1 < perSide; ++k)
+        {
+            double x = firstX + (k + 0.5) * spacing;
+            VizDecoration("models/caar/plant_row.obj", Vector3D(x, (aisleMax + depth) / 2, 0));
+            VizDecoration("models/caar/plant_row.obj", Vector3D(x, aisleMin / 2, 0));
+        }
     }
 
     netsimulyzer::NodeConfigurationHelper gateway(v.orchestrator);
@@ -796,7 +822,7 @@ VizOnGatewayEvents(const std::vector<std::string>&, const std::string&)
 }
 
 void
-SetupViz(const std::string&, const std::string&, double, bool)
+SetupViz(const std::string&, const std::string&, double, bool, bool)
 {
     NS_ABORT_MSG("--netsimulyzer needs the NetSimulyzer module in ns-3 contrib/netsimulyzer "
                  "(simulation/vm/setup-ubuntu.sh --netsimulyzer)");
@@ -1111,6 +1137,7 @@ main(int argc, char* argv[])
     std::string fixedWeights;
     std::string netanimPath;
     std::string netsimulyzerPath;
+    bool netsimulyzerEnv = true;
     bool destinationOnly = false;
     double netanimStart = 0;
     double netanimStop = -1;
@@ -1148,6 +1175,9 @@ main(int argc, char* argv[])
     cmd.AddValue("netsimulyzer",
                  "Ghi cảnh 3D NetSimulyzer ra file JSON (trống = tắt)",
                  netsimulyzerPath);
+    cmd.AddValue("netsimulyzer-env",
+                 "Cảnh 3D có khung thép, kính, hàng cà chua (cần models/caar trong trình xem)",
+                 netsimulyzerEnv);
     cmd.Parse(argc, argv);
 
     if (config == "no_cloud")
@@ -1391,7 +1421,8 @@ main(int argc, char* argv[])
         SetupViz(netsimulyzerPath,
                  ReadFile(layoutPath),
                  duration,
-                 g_config == SimConfig::kGatewayHeuristic || g_config == SimConfig::kCloudAssisted);
+                 g_config == SimConfig::kGatewayHeuristic || g_config == SimConfig::kCloudAssisted,
+                 netsimulyzerEnv);
     }
 
     FlowMonitorHelper flowHelper;

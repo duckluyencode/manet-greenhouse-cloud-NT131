@@ -8,6 +8,7 @@
 | `install.sh` | Áp patch (bỏ qua nếu đã áp) và chép `caar.cc` + `caar_logic.h` vào `scratch/caar/` |
 | `vm/setup-ubuntu.sh`, `vm/demo.sh` | Cài và chạy trên Ubuntu 24.04, xem bằng NetAnim (2D) và NetSimulyzer (3D) |
 | `vm/netanim-wpr.patch` | Cho NetAnim 3.109 vẽ được gói wifi của ns-3 |
+| `netsimulyzer/models/caar/` | Mô hình 3D khung thép, kính, hàng cà chua cho trình xem NetSimulyzer (`scripts/gen_greenhouse_models.py`) |
 | `Dockerfile` | Ubuntu 24.04 + ns-3.48 đã cài CAAR |
 
 ## Cài trên Ubuntu 24.04 (máy ảo hoặc máy thật)
@@ -79,6 +80,7 @@ cd ~/ns-3-dev
 | `--speed` | 0,2 | Ghi vào cột `mobility_speed` |
 | `--netanim`, `--netanim-start`, `--netanim-stop` | tắt, 0, cuối | File XML NetAnim và cửa sổ ghi gói tin |
 | `--netsimulyzer` | tắt | File JSON cảnh 3D cho NetSimulyzer (cần module `contrib/netsimulyzer`) |
+| `--netsimulyzer-env` | bật | Cảnh 3D có khung thép, kính, hàng cà chua (cần chép `models/caar` vào trình xem) |
 | `--drain-move`, `--drain-tx` | 0,02 %/s, 0,001 %/gói | Hao pin (mục 6.3) |
 
 ## Mô hình trong `caar.cc`
@@ -131,6 +133,8 @@ Play. Mỗi gói hiện trong một bước phát. Kéo thanh Sim time là tua n
 | Trong cảnh | Lấy từ |
 |---|---|
 | Nền nhà kính 100 × 100 m, lối đi giữa, 112 ray | `contracts/waypoints/layout.json` |
+| Khung thép kiểu Venlo (11 nhịp ~9 m, máng xối 4,5 m, đỉnh mái 5,6 m, cột mỗi 5 m, kèo, giằng), kính mái và vách, cửa hai đầu lối đi | `netsimulyzer/models/caar/frame.obj`, `glass.obj` |
+| 110 hàng cà chua (máng giá thể, thân, lá, quả chín và xanh), mỗi hàng giữa hai ray | `netsimulyzer/models/caar/plant_row.obj` |
 | Gateway (cột anten), tên `Gateway L1/L2/L3`, màu xanh dương / cam / đỏ theo mức hạ cấp | máy trạng thái Gateway |
 | Robot (xe), vệt di chuyển, màu và nhãn theo pin (`r3 57%`) | quỹ đạo waypoints, pin mỗi 5 s |
 | Vòng phát mỗi lần robot gửi gói telemetry | `SendTelemetry` |
@@ -155,10 +159,25 @@ Trình xem là ứng dụng riêng, không cần ns-3:
   cd ~/netsimulyzer-app && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j2
   ```
 
+Chép mô hình nhà kính vào trình xem (một lần), nếu không cảnh chỉ có nền và ray:
+
+```bash
+# Windows (PowerShell), từ thư mục repo:
+Copy-Item -Recurse simulation\netsimulyzer\models\caar <thư mục trình xem>\resources\models\
+# Ubuntu, trình xem build ở ~/netsimulyzer-app:
+cp -r simulation/netsimulyzer/models/caar ~/netsimulyzer-app/resources/models/
+```
+
+Mô hình sinh từ `layout.json` bằng `python scripts/gen_greenhouse_models.py` (đổi layout thì chạy
+lại; test `test_greenhouse_models_match_generator` báo khi file đã commit lệch với script). Cột thép
+đặt giữa ray và hàng cây nên không chắn đường robot. Không cần môi trường thì chạy với
+`--netsimulyzer-env=0`.
+
 Trong trình xem: **File > Load** chọn file `.json` (truyền đường dẫn trên dòng lệnh không mở được file).
 **Camera > Arc Ball** rồi cuộn chuột để nhìn bao quát; **Jump** nhập `05:00.000000000` để tới lúc mất
 cloud; ▶ để chạy. Log ở khung **Log** (danh sách thả xuống chọn `Gateway`, `Định tuyến AODV` hoặc
-`Unified Log`); khung biểu đồ mở thêm từ menu **Window** rồi chọn series.
+`Unified Log`); biểu đồ ở khung **Chart Widget** (mở từ menu **Window**), chọn series ở
+**Select Series**.
 
 ## Kiểm tra (mục 14.3)
 

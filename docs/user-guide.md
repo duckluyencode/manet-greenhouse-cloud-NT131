@@ -40,12 +40,15 @@ Xem 3D bằng NetSimulyzer (trên Windows, trình xem chạy bằng card đồ h
 
 1. Tải `NetSimulyzer-v1.0.17-windows.zip` ở trang release
    `github.com/usnistgov/NetSimulyzer/releases/tag/v1.0.17`, giải nén, chạy `netsimulyzer.exe`.
-2. Chép cảnh 3D từ máy ảo ra Windows, ví dụ
+2. Chép thư mục `simulation/netsimulyzer/models/caar` của repo vào `resources/models/` của trình xem
+   (khung thép, kính, hàng cà chua; làm một lần).
+3. Chép cảnh 3D từ máy ảo ra Windows, ví dụ
    `scp -P 2222 <user>@127.0.0.1:manet-greenhouse-cloud-NT131/results/demo/<tên>.json .`
-3. **File > Load** chọn file `.json`; **Camera > Arc Ball**, cuộn chuột để nhìn cả nhà kính; **Jump**
+4. **File > Load** chọn file `.json`; **Camera > Arc Ball**, cuộn chuột để nhìn cả nhà kính; **Jump**
    nhập `05:00.000000000`; bấm ▶.
 
-Trong cảnh 3D: robot là xe trên ray, đổi màu và nhãn theo pin như NetAnim; Gateway là cột anten ở
+Trong cảnh 3D: nhà kính khung thép kiểu Venlo có mái và vách kính, 110 hàng cà chua trên máng giá
+thể; robot là xe trên ray giữa các hàng cây, đổi màu và nhãn theo pin như NetAnim; Gateway là cột anten ở
 giữa lối đi, tên `Gateway L1/L2/L3`. Mỗi robot có một đường tới hop kế tiếp về Gateway lấy từ bảng
 AODV: xanh dương là đi thẳng tới Gateway, cam là chuyển tiếp qua robot khác; mất đường thì đường biến
 mất. Khung **Log** có log `Gateway` (param_update và luật, outage_start, stale_detected, outage_end)
