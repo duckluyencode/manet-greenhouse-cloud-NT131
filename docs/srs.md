@@ -33,6 +33,7 @@ phần cứng robot thật.
 | FR-06 | Delayed RREQ forwarding: chờ D_max·c_i + U(0, J) trước khi rebroadcast RREQ | 4 | Patch AODV + `caar.cc` |
 | FR-07 | 4 cấu hình: no_cloud, local_optimized, gateway_heuristic, cloud_assisted | 10.1 | `caar.cc` |
 | FR-08 | Xem mô phỏng bằng NetAnim: vị trí robot, pin, mức hạ cấp của Gateway, gói tin | 13 | `caar.cc --netanim`, `simulation/vm/demo.sh` |
+| FR-09 | Xem mô phỏng 3D bằng NetSimulyzer: nhà kính, robot, đường AODV về Gateway, biểu đồ PDR / pin / mức Gateway, log Gateway | 13 | `caar.cc --netsimulyzer`, `simulation/vm/demo.sh` |
 
 ## 4. Yêu cầu phi chức năng
 
