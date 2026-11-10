@@ -141,6 +141,12 @@ Play. Mỗi gói hiện trong một bước phát. Kéo thanh Sim time là tua n
 | Đường robot → hop kế tiếp về Gateway: xanh dương = thẳng tới Gateway, cam = qua robot khác | bảng AODV của robot (route `UP`), đọc mỗi giây |
 | Biểu đồ: PDR theo khung 10 s, số robot có đường về Gateway, pin thấp nhất, mức Gateway | bộ đếm gói, bảng AODV, pin, Gateway |
 | Log `Gateway` (param_update + luật, outage_start, stale_detected, outage_end) và `Định tuyến AODV` | như `_events.csv`; đổi hop kế tiếp |
+| Chỉ `cloud_assisted`: máy chủ Cloud (mô hình `server`) phía bắc nhà kính, đường Gateway–Cloud xanh lá / cam / đỏ theo L1/L2/L3, vòng sáng ở Gateway mỗi lần gọi `/optimize` và ở Cloud khi trả lời | kênh Cloud mô phỏng trong `GatewayTick` (RTT 40 ms, timeout 2 s) |
+| Chỉ `cloud_assisted`: log `Cloud` (mỗi lần gọi: byte gửi, byte nhận, RTT, luật; hoặc timeout) và biểu đồ byte trao đổi với Cloud cộng dồn | `SnapshotBytes`, `kResponseBytes`, `g_cloudBytes` |
+
+Cloud trong mô phỏng không phải node mạng: `GatewayTick` chạy cùng heuristic với dịch vụ FastAPI
+(`caar::ChooseWeights`, khớp bản Python qua `contracts/parity_cases.json`) và trả kết quả sau RTT hằng
+số; node "Cloud" trong cảnh 3D không có card mạng hay IP, chỉ để vẽ máy chủ và đường nối.
 
 Cảnh chỉ đọc trạng thái mô phỏng (không thêm biến ngẫu nhiên, gói tin hay thay đổi định tuyến; in
 bảng AODV làm trên bản sao), nên CSV và `_events.csv` giống hệt lượt chạy không bật 3D; `check_ns3.py`

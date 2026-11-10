@@ -454,6 +454,14 @@ struct Viz
     Ptr<netsimulyzer::XYSeries> level; // chỉ có ở gateway_heuristic và cloud_assisted
     Ptr<netsimulyzer::LogStream> gatewayLog;
     Ptr<netsimulyzer::LogStream> routeLog;
+    // Kênh Gateway–Cloud (chỉ cloud_assisted). Cloud không phải node mạng trong mô phỏng: node này
+    // không có card mạng hay IP, chỉ để vẽ máy chủ và đường nối.
+    Ptr<Node> cloud;
+    Ptr<netsimulyzer::NodeConfiguration> cloudConfig;
+    Ptr<netsimulyzer::LogicalLink> cloudLink;
+    Ptr<netsimulyzer::LogStream> cloudLog;
+    Ptr<netsimulyzer::XYSeries> cloudBytes;
+    uint32_t cloudRequestBytes = 0; // byte NetworkSnapshot của lần gọi đang chờ
 };
 
 std::unique_ptr<Viz> g_viz;
@@ -470,6 +478,14 @@ netsimulyzer::Color3
 LevelColor(int level)
 {
     return level == 1 ? netsimulyzer::BLUE : level == 2 ? netsimulyzer::ORANGE : netsimulyzer::RED;
+}
+
+// Đường Gateway–Cloud: xanh lá khi Cloud trả lời (L1), cam khi đang dùng cache (L2), đỏ khi
+// cache quá TTL (L3).
+netsimulyzer::Color3
+CloudLinkColor(int level)
+{
+    return level == 1 ? netsimulyzer::GREEN : level == 2 ? netsimulyzer::ORANGE : netsimulyzer::RED;
 }
 
 std::string
@@ -644,6 +660,58 @@ VizOnGatewayEvents(const std::vector<std::string>& events, const std::string& pa
     }
     v.node[0]->SetName("Gateway L" + std::to_string(level));
     v.node[0]->SetBaseColor(LevelColor(level));
+    if (v.cloudLink)
+    {
+        v.cloudLink->SetColor(CloudLinkColor(level));
+    }
+}
+
+// Gateway gọi POST /optimize: vòng sáng ở Gateway, ghi nhớ số byte gửi lên.
+void
+VizOnCloudCall(uint32_t requestBytes)
+{
+    if (!g_viz || !g_viz->cloud)
+    {
+        return;
+    }
+    g_viz->cloudRequestBytes = requestBytes;
+    g_viz->node[0]->Transmit(MilliSeconds(500), 6.0, netsimulyzer::BLUE);
+}
+
+void
+VizOnCloudReply(double callTime, const std::string& rule, uint32_t responseBytes)
+{
+    if (!g_viz || !g_viz->cloud)
+    {
+        return;
+    }
+    Viz& v = *g_viz;
+    double now = Simulator::Now().GetSeconds();
+    v.cloudConfig->Transmit(MilliSeconds(500), 6.0, netsimulyzer::GREEN);
+    std::ostringstream line;
+    line << std::fixed << std::setprecision(2) << now << " s  /optimize: gửi " << v.cloudRequestBytes
+         << " B, nhận " << responseBytes << " B sau " << std::lround((now - callTime) * 1000)
+         << " ms → " << rule << "  (L" << static_cast<int>(g_gateway->level()) << ")\n";
+    v.cloudLog->Write(line.str());
+    v.cloudBytes->Append(now, g_cloudBytes / 1000.0);
+}
+
+void
+VizOnCloudFailure(double callTime)
+{
+    if (!g_viz || !g_viz->cloud)
+    {
+        return;
+    }
+    Viz& v = *g_viz;
+    double now = Simulator::Now().GetSeconds();
+    std::ostringstream line;
+    line << std::fixed << std::setprecision(2) << now << " s  /optimize gọi lúc " << callTime
+         << " s: gửi " << v.cloudRequestBytes << " B, không có trả lời sau "
+         << std::lround(now - callTime) << " s (timeout)  (L" << static_cast<int>(g_gateway->level())
+         << ")\n";
+    v.cloudLog->Write(line.str());
+    v.cloudBytes->Append(now, g_cloudBytes / 1000.0);
 }
 
 // Đặt tên/màu ban đầu ở t = 0, sau khi Orchestrator dựng xong cảnh.
@@ -714,7 +782,8 @@ SetupViz(const std::string& path,
          const std::string& layout,
          double duration,
          bool gatewayLevels,
-         bool environment)
+         bool environment,
+         bool cloud)
 {
     g_viz = std::make_unique<Viz>();
     Viz& v = *g_viz;
@@ -799,6 +868,36 @@ SetupViz(const std::string& path,
         v.level->Append(0, 1);
     }
 
+    // Máy chủ Cloud (FastAPI trên AWS EC2) lơ lửng phía bắc nhà kính, nối với Gateway.
+    if (cloud)
+    {
+        v.cloud = CreateObject<Node>();
+        Ptr<ConstantPositionMobilityModel> m = CreateObject<ConstantPositionMobilityModel>();
+        m->SetPosition(Vector(width / 2, depth + 25, 12));
+        v.cloud->AggregateObject(m);
+        netsimulyzer::NodeConfigurationHelper server(v.orchestrator);
+        server.Set("Model", netsimulyzer::models::SERVER_VALUE);
+        server.Set("Height", netsimulyzer::OptionalValue<double>(5));
+        server.Install(v.cloud);
+        v.cloudConfig = v.cloud->GetObject<netsimulyzer::NodeConfiguration>();
+        v.cloudLink = CreateObject<netsimulyzer::LogicalLink>(v.orchestrator,
+                                                              g_nodes[0]->GetId(),
+                                                              v.cloud->GetId(),
+                                                              CloudLinkColor(1));
+        v.cloudLog = CreateObject<netsimulyzer::LogStream>(v.orchestrator);
+        v.cloudLog->SetAttribute("Name", StringValue("Cloud"));
+        v.cloudBytes = VizSeries("Byte trao đổi với Cloud (kB, cộng dồn)",
+                                 "kB",
+                                 netsimulyzer::PURPLE,
+                                 Conn::Line,
+                                 1,
+                                 duration);
+        v.cloudBytes->GetYAxis()->SetAttribute(
+            "BoundMode",
+            EnumValue(netsimulyzer::ValueAxis::BoundMode::HighestValue));
+        v.cloudBytes->Append(0, 0);
+    }
+
     Simulator::Schedule(Seconds(0), &VizStart);
     Simulator::Schedule(Seconds(1), &VizRoutes);
     Simulator::Schedule(Seconds(2 * kVizPdrBucketS), &VizPdr);
@@ -822,7 +921,22 @@ VizOnGatewayEvents(const std::vector<std::string>&, const std::string&)
 }
 
 void
-SetupViz(const std::string&, const std::string&, double, bool, bool)
+VizOnCloudCall(uint32_t)
+{
+}
+
+void
+VizOnCloudReply(double, const std::string&, uint32_t)
+{
+}
+
+void
+VizOnCloudFailure(double)
+{
+}
+
+void
+SetupViz(const std::string&, const std::string&, double, bool, bool, bool)
 {
     NS_ABORT_MSG("--netsimulyzer needs the NetSimulyzer module in ns-3 contrib/netsimulyzer "
                  "(simulation/vm/setup-ubuntu.sh --netsimulyzer)");
@@ -983,12 +1097,14 @@ OnCloudReply(double callTime, caar::Decision decision)
 {
     g_cloudBytes += kResponseBytes;
     LogEvents(g_gateway->OnReply(callTime, decision.weights), caar::RuleName(decision.rule));
+    VizOnCloudReply(callTime, caar::RuleName(decision.rule), kResponseBytes);
 }
 
 void
 OnCloudFailure(double callTime)
 {
     LogEvents(g_gateway->OnFailure(callTime), "");
+    VizOnCloudFailure(callTime);
 }
 
 void
@@ -1004,7 +1120,9 @@ GatewayTick()
     }
     else
     {
-        g_cloudBytes += SnapshotBytes(snapshot);
+        uint32_t requestBytes = SnapshotBytes(snapshot);
+        g_cloudBytes += requestBytes;
+        VizOnCloudCall(requestBytes);
         bool outage = t >= g_outageStart && t < g_outageEnd;
         Time rtt = MilliSeconds(g_wanConstantRttMs);
         if (outage || rtt >= g_cloudTimeout)
@@ -1422,7 +1540,8 @@ main(int argc, char* argv[])
                  ReadFile(layoutPath),
                  duration,
                  g_config == SimConfig::kGatewayHeuristic || g_config == SimConfig::kCloudAssisted,
-                 netsimulyzerEnv);
+                 netsimulyzerEnv,
+                 g_config == SimConfig::kCloudAssisted);
     }
 
     FlowMonitorHelper flowHelper;

@@ -52,7 +52,10 @@ thể; robot là xe trên ray giữa các hàng cây, đổi màu và nhãn theo
 giữa lối đi, tên `Gateway L1/L2/L3`. Mỗi robot có một đường tới hop kế tiếp về Gateway lấy từ bảng
 AODV: xanh dương là đi thẳng tới Gateway, cam là chuyển tiếp qua robot khác; mất đường thì đường biến
 mất. Khung **Log** có log `Gateway` (param_update và luật, outage_start, stale_detected, outage_end)
-và log `Định tuyến AODV` (robot đổi hop kế tiếp). Chi tiết: [`simulation/README.md`](../simulation/README.md)
+và log `Định tuyến AODV` (robot đổi hop kế tiếp). Với `cloud_assisted`, cảnh có thêm máy chủ Cloud phía
+bắc nhà kính nối với Gateway: đường nối xanh lá khi Cloud trả lời, cam khi Gateway dùng trọng số lưu đệm,
+đỏ khi trọng số quá TTL; log `Cloud` ghi từng lần gọi `/optimize` (byte gửi/nhận, RTT, luật hoặc timeout).
+Chi tiết: [`simulation/README.md`](../simulation/README.md)
 mục "Xem 3D bằng NetSimulyzer".
 
 Tham số của `caar`: [`simulation/README.md`](../simulation/README.md).

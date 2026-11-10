@@ -26,6 +26,8 @@
 - Môi trường nhà kính 3D: khung thép Venlo, kính mái và vách, 110 hàng cà chua giữa các ray
   (`scripts/gen_greenhouse_models.py` sinh OBJ từ `layout.json` vào `simulation/netsimulyzer/models/caar/`,
   `caar --netsimulyzer-env`)
+- Kênh Cloud trong cảnh 3D (`cloud_assisted`): máy chủ Cloud nối với Gateway, màu đường nối theo mức
+  hạ cấp, vòng sáng mỗi lần gọi/trả lời `/optimize`, log `Cloud` và biểu đồ byte trao đổi với Cloud
 - `simulation/caar-logic/caar_logic.h`: heuristic, chi phí c_i, máy trạng thái Gateway; parity với
   bản Python qua `contracts/parity_cases.json`
 - Môi trường: nhà kính 1 ha, 112 hàng ray, radio WiFi 20 dBm + anten 3 dBi, ngưỡng −82 dBm (tầm ~29 m)

@@ -201,7 +201,9 @@ def main() -> None:
         layout = json.loads((CONTRACTS / "waypoints" / "layout.json").read_text(encoding="utf-8"))
         check(len(scene.get("areas", [])) == 2 + 2 * layout["rails"]["per_side"],
               f"greenhouse floor, aisle and {2 * layout['rails']['per_side']} rails drawn")
-        check(len(scene.get("nodes", [])) == 11, "Gateway and 10 robots in the scene")
+        node_models = [n["model"] for n in scene.get("nodes", [])]
+        check(len(node_models) == 12 and node_models[-1].endswith("server.obj"),
+              "Gateway, 10 robots and the Cloud server in the scene")
         models = [d["model"] for d in scene.get("decorations", [])]
         check(models.count("models/caar/plant_row.obj") == 2 * (layout["rails"]["per_side"] - 1)
               and "models/caar/frame.obj" in models and "models/caar/glass.obj" in models,
@@ -209,12 +211,19 @@ def main() -> None:
         kinds = [e["type"] for e in scene.get("events", [])]
         check("logical-link-create" in kinds and "logical-link-update" in kinds, "AODV route links drawn")
         charts = {"PDR (khung 10 s)", "Robot có đường AODV về Gateway", "Pin thấp nhất (%)",
-                  "Mức hạ cấp Gateway"}
+                  "Mức hạ cấp Gateway", "Byte trao đổi với Cloud (kB, cộng dồn)"}
         check({s["name"] for s in scene.get("series", [])} == charts,
-              "4 charts: PDR, routed robots, lowest battery, Gateway level")
+              "5 charts: PDR, routed robots, lowest battery, Gateway level, Cloud bytes")
         logged = " ".join(e.get("data", "") for e in scene.get("events", []) if e["type"] == "stream-append")
         check(all(e in logged for e in ("outage_start", "stale_detected", "outage_end")),
               "Gateway log stream has the outage events")
+        cloud_id = next((s["id"] for s in scene.get("streams", []) if s["name"] == "Cloud"), None)
+        cloud_lines = [e["data"] for e in scene.get("events", [])
+                       if e["type"] == "stream-append" and e.get("stream-id") == cloud_id]
+        calls = len(range(5, 900, 5))       # Gateway gọi Cloud mỗi 5 s: 5, 10, ..., 895 s
+        timeouts = len(range(300, 600, 5))  # các lần gọi rơi vào lúc mất Cloud
+        check(len(cloud_lines) == calls and sum("timeout" in x for x in cloud_lines) == timeouts,
+              f"Cloud log: {len(cloud_lines)} calls to /optimize, {timeouts} timeouts during the outage")
     else:
         print("8. NetSimulyzer check skipped (no contrib/netsimulyzer in ns-3)")
 
