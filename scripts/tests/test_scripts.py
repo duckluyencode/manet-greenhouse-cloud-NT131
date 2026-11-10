@@ -13,6 +13,7 @@ import pytest
 import caar_stats
 import connectivity
 import fit_channel
+import gen_greenhouse_models
 import gen_waypoints
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -208,3 +209,31 @@ def test_import_and_plot_pipeline(tmp_path) -> None:
     assert "| Q1 |" in hyp and "Xác nhận" in hyp
     with (figs / "summary.csv").open(encoding="utf-8") as f:
         assert any(r["scenario"] == "baseline" for r in csv.DictReader(f))
+
+
+# --- gen_greenhouse_models ----------------------------------------------------
+
+def test_greenhouse_models_match_generator(tmp_path: Path) -> None:
+    # Mô hình 3D đã commit phải đúng là đầu ra của script với layout.json hiện tại.
+    subprocess.run([sys.executable, str(SCRIPTS / "gen_greenhouse_models.py"), "--out", str(tmp_path)],
+                   check=True, capture_output=True)
+    committed = ROOT / "simulation" / "netsimulyzer" / "models" / "caar"
+    names = sorted(f.name for f in tmp_path.iterdir())
+    assert names == sorted(f.name for f in committed.iterdir())
+    for name in names:
+        # git trên Windows có thể đổi LF -> CRLF khi checkout
+        assert ((tmp_path / name).read_bytes().replace(b"\r\n", b"\n")
+                == (committed / name).read_bytes().replace(b"\r\n", b"\n")), name
+
+
+def test_greenhouse_columns_clear_rails_and_plants() -> None:
+    # Cột thép không đứng trên ray robot hay hàng cây (hàng cây ở giữa hai ray).
+    layout = json.loads((ROOT / "contracts" / "waypoints" / "layout.json").read_text(encoding="utf-8"))
+    rails = layout["rails"]
+    rail_x = [rails["first_x"] + k * rails["spacing_m"] for k in range(rails["per_side"])]
+    plant_x = [x + rails["spacing_m"] / 2 for x in rail_x[:-1]]
+    columns = gen_greenhouse_models.gutter_lines(layout["greenhouse_m"][0], rails["first_x"],
+                                                 rails["spacing_m"], rails["per_side"])
+    assert columns[0] == 0 and columns[-1] == layout["greenhouse_m"][0]
+    for c in columns[1:-1]:
+        assert min(abs(c - x) for x in rail_x + plant_x) >= 0.4, c

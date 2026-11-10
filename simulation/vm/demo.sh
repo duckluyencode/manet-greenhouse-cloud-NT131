@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Chạy một kịch bản CAAR trên ns-3 đã cài bằng setup-ubuntu.sh, in kết quả ra terminal,
-# ghi trace NetAnim rồi mở NetAnim để xem.
+# ghi trace NetAnim rồi mở NetAnim để xem. Nếu ns-3 có module NetSimulyzer, ghi thêm cảnh 3D
+# (.json) để mở bằng trình xem NetSimulyzer.
 #
 #   bash simulation/vm/demo.sh                          # cloud_assisted, mất cloud 300–600 s
 #   bash simulation/vm/demo.sh no_cloud baseline        # AODV gốc
@@ -31,6 +32,13 @@ mkdir -p "$OUT_DIR"
 NAME="${CONFIG}_${SCENARIO}_n${NODES}_s${SEED}"
 EXTRA=""
 [[ "$SCENARIO" == "outage" ]] && EXTRA="--outage-start=300 --outage-end=600"
+SCENE=""
+# Chỉ bật cảnh 3D khi ns-3 đã được cấu hình kèm module (có thư mục contrib/netsimulyzer chưa đủ:
+# cấu hình lại với NETSIMULYZER=0 thì caar không có module và sẽ dừng nếu nhận --netsimulyzer).
+if grep -q '^NS3_ENABLED_MODULES:.*netsimulyzer' "$NS3_DIR/cmake-cache/CMakeCache.txt" 2>/dev/null; then
+  SCENE="$OUT_DIR/$NAME.json"
+  EXTRA+=" --netsimulyzer=$SCENE"
+fi
 
 echo "Kịch bản: $CONFIG / $SCENARIO, $NODES robot, seed $SEED (900 s mô phỏng)"
 cd "$NS3_DIR"
@@ -42,6 +50,11 @@ echo
 echo "Kết quả (CSV):   $OUT_DIR/$NAME.csv"
 [[ -f "$OUT_DIR/${NAME}_events.csv" ]] && echo "Log Gateway:     $OUT_DIR/${NAME}_events.csv"
 echo "Trace NetAnim:   $OUT_DIR/$NAME.xml"
+if [[ -n "$SCENE" ]]; then
+  echo "Cảnh 3D:         $SCENE"
+  echo "  Mở bằng trình xem NetSimulyzer: File > Load, chọn file .json (simulation/README.md mục Xem 3D)."
+  echo "  Khung thép, kính, cây: chép $REPO/simulation/netsimulyzer/models/caar vào resources/models/ của trình xem."
+fi
 echo "Trong NetAnim:"
 echo "  1. Bấm biểu tượng thư mục (góc trên bên trái), chọn file .xml ở trên."
 echo "  2. Gõ ${START} vào ô Pause At, kéo thanh fast–slow hết về fast, bấm ▶: chạy nhanh tới ${START} s rồi dừng."

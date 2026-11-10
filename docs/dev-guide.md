@@ -7,10 +7,12 @@
 | Python | 3.11+ | Cloud service, script phân tích |
 | g++ | 9+ (C++17) | Parity test `simulation/caar-logic/` |
 | ns-3 | 3.48, profile `release` | Mô phỏng ([`simulation/README.md`](../simulation/README.md)) |
-| NetAnim | 3.109 | Xem trace mô phỏng |
+| NetAnim | 3.109 | Xem trace mô phỏng (2D) |
+| NetSimulyzer | 1.0.17 (module ns-3 + trình xem) | Xem cảnh 3D (`caar --netsimulyzer`) |
 | Docker | 24+ | Tùy chọn: image ns-3 (`simulation/Dockerfile`), deploy cloud |
 
-Trên Ubuntu 24.04, `bash simulation/vm/setup-ubuntu.sh` cài ns-3 và NetAnim.
+Trên Ubuntu 24.04, `bash simulation/vm/setup-ubuntu.sh` cài ns-3 (kèm module NetSimulyzer) và
+NetAnim. Trình xem NetSimulyzer cài riêng ([`simulation/README.md`](../simulation/README.md)).
 
 ## 2. Clone và cài
 

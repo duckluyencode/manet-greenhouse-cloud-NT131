@@ -11,11 +11,12 @@ bash simulation/vm/setup-ubuntu.sh
 bash simulation/vm/demo.sh
 ```
 
-`setup-ubuntu.sh` cài gói hệ thống, ns-3.48 kèm CAAR vào `~/ns-3-dev` và NetAnim 3.109 vào
-`~/netanim`; chạy lại thì bỏ qua bước đã xong.
+`setup-ubuntu.sh` cài gói hệ thống, ns-3.48 kèm CAAR và module NetSimulyzer vào `~/ns-3-dev`, và
+NetAnim 3.109 vào `~/netanim`; chạy lại thì bỏ qua bước đã xong.
 
 `demo.sh [config] [scenario] [seed] [số robot]` (mặc định `cloud_assisted outage 1 10`) chạy một
-kịch bản 900 s, ghi `results/demo/<tên>.csv` và trace `results/demo/<tên>.xml`, rồi mở NetAnim.
+kịch bản 900 s, ghi `results/demo/<tên>.csv`, trace NetAnim `results/demo/<tên>.xml` và cảnh 3D
+`results/demo/<tên>.json`, rồi mở NetAnim.
 
 Trong NetAnim:
 
@@ -34,6 +35,28 @@ tua nhanh, NetAnim không vẽ gói trong đoạn tua.
 | Gateway xanh dương | Mức 1: trọng số từ Cloud |
 | Gateway cam | Mức 2: mất Cloud, dùng trọng số cache (từ giây 302) |
 | Gateway đỏ | Mức 3: cache quá TTL, dùng bộ cân bằng (giây 357) |
+
+Xem 3D bằng NetSimulyzer (trên Windows, trình xem chạy bằng card đồ họa thật):
+
+1. Tải `NetSimulyzer-v1.0.17-windows.zip` ở trang release
+   `github.com/usnistgov/NetSimulyzer/releases/tag/v1.0.17`, giải nén, chạy `netsimulyzer.exe`.
+2. Chép thư mục `simulation/netsimulyzer/models/caar` của repo vào `resources/models/` của trình xem
+   (khung thép, kính, hàng cà chua; làm một lần).
+3. Chép cảnh 3D từ máy ảo ra Windows, ví dụ
+   `scp -P 2222 <user>@127.0.0.1:manet-greenhouse-cloud-NT131/results/demo/<tên>.json .`
+4. **File > Load** chọn file `.json`; **Camera > Arc Ball**, cuộn chuột để nhìn cả nhà kính; **Jump**
+   nhập `05:00.000000000`; bấm ▶.
+
+Trong cảnh 3D: nhà kính khung thép kiểu Venlo có mái và vách kính, 110 hàng cà chua trên máng giá
+thể; robot là xe trên ray giữa các hàng cây, đổi màu và nhãn theo pin như NetAnim; Gateway là cột anten ở
+giữa lối đi, tên `Gateway L1/L2/L3`. Mỗi robot có một đường tới hop kế tiếp về Gateway lấy từ bảng
+AODV: xanh dương là đi thẳng tới Gateway, cam là chuyển tiếp qua robot khác; mất đường thì đường biến
+mất. Khung **Log** có log `Gateway` (param_update và luật, outage_start, stale_detected, outage_end)
+và log `Định tuyến AODV` (robot đổi hop kế tiếp). Với `cloud_assisted`, cảnh có thêm máy chủ Cloud phía
+bắc nhà kính nối với Gateway: đường nối xanh lá khi Cloud trả lời, cam khi Gateway dùng trọng số lưu đệm,
+đỏ khi trọng số quá TTL; log `Cloud` ghi từng lần gọi `/optimize` (byte gửi/nhận, RTT, luật hoặc timeout).
+Chi tiết: [`simulation/README.md`](../simulation/README.md)
+mục "Xem 3D bằng NetSimulyzer".
 
 Tham số của `caar`: [`simulation/README.md`](../simulation/README.md).
 

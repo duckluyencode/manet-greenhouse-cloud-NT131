@@ -1,0 +1,60 @@
+# CAAR greenhouse, scripts/gen_greenhouse_models.py
+newmtl substrate
+Ns 60
+Ka 1 1 1
+Kd 0.920 0.920 0.900
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2
+
+newmtl stem
+Ns 60
+Ka 1 1 1
+Kd 0.300 0.450 0.180
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2
+
+newmtl leaf
+Ns 60
+Ka 1 1 1
+Kd 0.250 0.600 0.200
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2
+
+newmtl leaf_dark
+Ns 60
+Ka 1 1 1
+Kd 0.130 0.420 0.130
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2
+
+newmtl fruit
+Ns 60
+Ka 1 1 1
+Kd 0.850 0.120 0.080
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2
+
+newmtl fruit_green
+Ns 60
+Ka 1 1 1
+Kd 0.550 0.750 0.250
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2

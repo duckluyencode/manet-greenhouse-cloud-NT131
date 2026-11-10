@@ -24,6 +24,9 @@
 //
 // Hiển thị: --netanim=<file.xml> ghi trace NetAnim (mở bằng trình xem NetAnim). Robot đổi
 // màu theo pin (xanh -> đỏ), Gateway đổi màu theo mức hạ cấp (xanh dương / cam / đỏ).
+// --netsimulyzer=<file.json> ghi cảnh 3D cho NetSimulyzer (cần contrib/netsimulyzer): nhà kính
+// với lối đi và ray, đường AODV của từng robot về Gateway, biểu đồ PDR / pin / mức Gateway và
+// log sự kiện Gateway. Cả hai chỉ đọc trạng thái mô phỏng nên CSV kết quả không đổi.
 #include "caar_logic.h"
 
 #include "ns3/aodv-helper.h"
@@ -37,6 +40,13 @@
 #include "ns3/propagation-module.h"
 #include "ns3/wifi-module.h"
 
+#if __has_include("ns3/netsimulyzer-module.h")
+#include "ns3/netsimulyzer-module.h"
+#define CAAR_HAS_NETSIMULYZER 1
+#else
+#define CAAR_HAS_NETSIMULYZER 0
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -44,6 +54,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -420,6 +431,538 @@ OnRouteDiscovery(Ipv4Address /*dst*/, Time duration)
 }
 
 // ---------------------------------------------------------------------------
+// Cảnh 3D NetSimulyzer (--netsimulyzer). Chỉ đọc trạng thái: không tạo biến ngẫu nhiên, không
+// gửi gói hay đổi bảng định tuyến (in bảng AODV làm trên bản sao), nên CSV kết quả giữ nguyên.
+// ---------------------------------------------------------------------------
+
+#if CAAR_HAS_NETSIMULYZER
+
+constexpr uint32_t kNoRoute = std::numeric_limits<uint32_t>::max();
+constexpr double kVizPdrBucketS = 10;
+
+struct Viz
+{
+    Ptr<netsimulyzer::Orchestrator> orchestrator;
+    std::vector<Ptr<netsimulyzer::NodeConfiguration>> node; // 0 = Gateway
+    std::vector<Ptr<netsimulyzer::LogicalLink>> route;      // robot i -> hop kế tiếp về Gateway
+    std::vector<uint32_t> nextHop;
+    std::vector<uint64_t> sent;      // gói dữ liệu theo khung 10 s của thời điểm gửi
+    std::vector<uint64_t> delivered; // ... tới Gateway
+    Ptr<netsimulyzer::XYSeries> pdr;
+    Ptr<netsimulyzer::XYSeries> routed;
+    Ptr<netsimulyzer::XYSeries> minBattery;
+    Ptr<netsimulyzer::XYSeries> level; // chỉ có ở gateway_heuristic và cloud_assisted
+    Ptr<netsimulyzer::LogStream> gatewayLog;
+    Ptr<netsimulyzer::LogStream> routeLog;
+    // Kênh Gateway–Cloud (chỉ cloud_assisted). Cloud không phải node mạng trong mô phỏng: node này
+    // không có card mạng hay IP, chỉ để vẽ máy chủ và đường nối.
+    Ptr<Node> cloud;
+    Ptr<netsimulyzer::NodeConfiguration> cloudConfig;
+    Ptr<netsimulyzer::LogicalLink> cloudLink;
+    Ptr<netsimulyzer::LogStream> cloudLog;
+    Ptr<netsimulyzer::XYSeries> cloudBytes;
+    std::string gatewayIp; // địa chỉ Gateway dạng chuỗi, để dò bảng AODV
+};
+
+std::unique_ptr<Viz> g_viz;
+
+netsimulyzer::Color3
+BatteryColor(double pct)
+{
+    double e = pct / 100.0;
+    return {uint8_t(220 * (1 - e)), uint8_t(180 * e + 20), 40};
+}
+
+// Mức 1 xanh dương, mức 2 cam (dùng cache), mức 3 đỏ (bộ cân bằng), như NetAnim.
+netsimulyzer::Color3
+LevelColor(int level)
+{
+    return level == 1 ? netsimulyzer::BLUE : level == 2 ? netsimulyzer::ORANGE : netsimulyzer::RED;
+}
+
+// Đường Gateway–Cloud: xanh lá khi Cloud trả lời (L1), còn lại cùng màu với Gateway (cam L2, đỏ L3).
+netsimulyzer::Color3
+CloudLinkColor(int level)
+{
+    return level == 1 ? netsimulyzer::GREEN : LevelColor(level);
+}
+
+std::string
+SecondsLabel(double t)
+{
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(1) << t << " s";
+    return os.str();
+}
+
+// Hop kế tiếp của robot về Gateway theo bảng AODV (route UP), hoặc kNoRoute.
+uint32_t
+NextHopToGateway(uint32_t robot)
+{
+    Ptr<aodv::RoutingProtocol> routing =
+        DynamicCast<aodv::RoutingProtocol>(g_nodes[robot]->GetObject<Ipv4>()->GetRoutingProtocol());
+    std::ostringstream table;
+    routing->PrintRoutingTable(Create<OutputStreamWrapper>(&table), Time::S);
+    const std::string& gateway = g_viz->gatewayIp;
+    std::istringstream in(table.str());
+    std::string line;
+    while (std::getline(in, line))
+    {
+        std::istringstream fields(line);
+        std::string dst;
+        std::string hop;
+        std::string iface;
+        std::string flag;
+        if (fields >> dst >> hop >> iface >> flag && dst == gateway && flag == "UP")
+        {
+            auto it = g_ipToIdx.find(Ipv4Address(hop.c_str()));
+            return it == g_ipToIdx.end() ? kNoRoute : it->second;
+        }
+    }
+    return kNoRoute;
+}
+
+std::string
+HopName(uint32_t idx)
+{
+    return idx == 0 ? "Gateway" : "r" + std::to_string(idx);
+}
+
+// Mỗi giây: vẽ lại đường robot -> hop kế tiếp (xanh dương: thẳng tới Gateway, cam: qua robot khác).
+void
+VizRoutes()
+{
+    Viz& v = *g_viz;
+    uint32_t routed = 0;
+    for (uint32_t i = 1; i <= g_nRobots; ++i)
+    {
+        uint32_t hop = NextHopToGateway(i);
+        if (hop != kNoRoute)
+        {
+            ++routed;
+        }
+        if (hop == v.nextHop[i])
+        {
+            continue;
+        }
+        if (hop == kNoRoute)
+        {
+            v.route[i]->Deactivate();
+            v.routeLog->Write(SecondsLabel(Simulator::Now().GetSeconds()) + "  r" + std::to_string(i) +
+                              " mất đường\n");
+        }
+        else
+        {
+            netsimulyzer::Color3 color = hop == 0 ? netsimulyzer::BLUE : netsimulyzer::ORANGE;
+            if (!v.route[i])
+            {
+                v.route[i] = CreateObject<netsimulyzer::LogicalLink>(v.orchestrator,
+                                                                     g_nodes[i]->GetId(),
+                                                                     g_nodes[hop]->GetId(),
+                                                                     color);
+            }
+            else
+            {
+                v.route[i]->SetNodes(g_nodes[i]->GetId(), g_nodes[hop]->GetId());
+                v.route[i]->SetColor(color);
+                v.route[i]->Activate();
+            }
+            v.routeLog->Write(SecondsLabel(Simulator::Now().GetSeconds()) + "  r" + std::to_string(i) +
+                              " -> " + HopName(hop) + "\n");
+        }
+        v.nextHop[i] = hop;
+    }
+    v.routed->Append(Simulator::Now().GetSeconds(), routed);
+    Simulator::Schedule(Seconds(1), &VizRoutes);
+}
+
+// Mỗi 5 s: màu và nhãn robot theo pin, điểm "pin thấp nhất".
+void
+VizRobots()
+{
+    Viz& v = *g_viz;
+    double minEnergy = 100;
+    for (uint32_t i = 1; i <= g_nRobots; ++i)
+    {
+        v.node[i]->SetBaseColor(BatteryColor(g_energyPct[i]));
+        v.node[i]->SetName("r" + std::to_string(i) + " " + std::to_string(std::lround(g_energyPct[i])) +
+                           "%");
+        minEnergy = std::min(minEnergy, g_energyPct[i]);
+    }
+    v.minBattery->Append(Simulator::Now().GetSeconds(), minEnergy);
+    Simulator::Schedule(Seconds(5), &VizRobots);
+}
+
+// Mỗi 10 s: PDR của gói gửi trong khung 10 s trước đó (chờ thêm 10 s cho gói tới nơi).
+void
+VizPdr()
+{
+    Viz& v = *g_viz;
+    double now = Simulator::Now().GetSeconds();
+    long bucket = std::lround(now / kVizPdrBucketS) - 2;
+    if (bucket >= 0 && size_t(bucket) < v.sent.size() && v.sent[bucket] > 0)
+    {
+        v.pdr->Append((bucket + 1) * kVizPdrBucketS, double(v.delivered[bucket]) / v.sent[bucket]);
+    }
+    Simulator::Schedule(Seconds(kVizPdrBucketS), &VizPdr);
+}
+
+void
+VizOnSend(uint32_t robot)
+{
+    if (!g_viz)
+    {
+        return;
+    }
+    size_t bucket = size_t(Simulator::Now().GetSeconds() / kVizPdrBucketS);
+    if (bucket < g_viz->sent.size())
+    {
+        ++g_viz->sent[bucket];
+    }
+    g_viz->node[robot]->Transmit(MilliSeconds(300), 2.0, netsimulyzer::GRAY_30);
+}
+
+void
+VizOnDelivered(Time txTime)
+{
+    if (!g_viz)
+    {
+        return;
+    }
+    size_t bucket = size_t(txTime.GetSeconds() / kVizPdrBucketS);
+    if (bucket < g_viz->delivered.size())
+    {
+        ++g_viz->delivered[bucket];
+    }
+}
+
+void
+VizOnGatewayEvents(const std::vector<std::string>& events, const std::string& payload)
+{
+    if (!g_viz || events.empty())
+    {
+        return;
+    }
+    Viz& v = *g_viz;
+    double now = Simulator::Now().GetSeconds();
+    int level = static_cast<int>(g_gateway->level());
+    for (const std::string& e : events)
+    {
+        v.gatewayLog->Write(SecondsLabel(now) + "  " + e +
+                            (e == caar::kParamUpdate ? "  " + payload : std::string()) + "  (L" +
+                            std::to_string(level) + ")\n");
+    }
+    if (v.level)
+    {
+        v.level->Append(now, level);
+    }
+    v.node[0]->SetName("Gateway L" + std::to_string(level));
+    v.node[0]->SetBaseColor(LevelColor(level));
+    if (v.cloudLink)
+    {
+        v.cloudLink->SetColor(CloudLinkColor(level));
+    }
+}
+
+// Gateway gọi POST /optimize: vòng sáng ở Gateway.
+void
+VizOnCloudCall()
+{
+    if (!g_viz || !g_viz->cloud)
+    {
+        return;
+    }
+    g_viz->node[0]->Transmit(MilliSeconds(500), 6.0, netsimulyzer::BLUE);
+}
+
+// Một dòng log Cloud: "<giờ> s  <kết quả>  (L<mức>)", kèm điểm byte cộng dồn.
+void
+VizCloudLog(const std::string& outcome)
+{
+    Viz& v = *g_viz;
+    double now = Simulator::Now().GetSeconds();
+    std::ostringstream line;
+    line << std::fixed << std::setprecision(2) << now << " s  " << outcome << "  (L"
+         << static_cast<int>(g_gateway->level()) << ")\n";
+    v.cloudLog->Write(line.str());
+    v.cloudBytes->Append(now, g_cloudBytes / 1000.0);
+}
+
+void
+VizOnCloudReply(double callTime,
+                uint32_t requestBytes,
+                const std::string& rule,
+                uint32_t responseBytes)
+{
+    if (!g_viz || !g_viz->cloud)
+    {
+        return;
+    }
+    g_viz->cloudConfig->Transmit(MilliSeconds(500), 6.0, netsimulyzer::GREEN);
+    double rttMs = (Simulator::Now().GetSeconds() - callTime) * 1000;
+    VizCloudLog("/optimize: gửi " + std::to_string(requestBytes) + " B, nhận " +
+                std::to_string(responseBytes) + " B sau " + std::to_string(std::lround(rttMs)) +
+                " ms → " + rule);
+}
+
+void
+VizOnCloudFailure(double callTime, uint32_t requestBytes)
+{
+    if (!g_viz || !g_viz->cloud)
+    {
+        return;
+    }
+    std::ostringstream outcome;
+    outcome << std::fixed << std::setprecision(2) << "/optimize gọi lúc " << callTime << " s: gửi "
+            << requestBytes << " B, không có trả lời sau "
+            << std::lround(Simulator::Now().GetSeconds() - callTime) << " s (timeout)";
+    VizCloudLog(outcome.str());
+}
+
+// Đặt tên/màu ban đầu ở t = 0, sau khi Orchestrator dựng xong cảnh.
+void
+VizStart()
+{
+    g_viz->node[0]->SetName("Gateway L1");
+    g_viz->node[0]->SetBaseColor(LevelColor(1));
+    if (g_viz->cloudConfig)
+    {
+        g_viz->cloudConfig->SetName("Cloud (FastAPI, AWS EC2)");
+    }
+    VizRobots();
+}
+
+Ptr<netsimulyzer::XYSeries>
+VizSeries(const std::string& name,
+          const std::string& yAxis,
+          netsimulyzer::Color3 color,
+          netsimulyzer::XYSeries::ConnectionType connection,
+          double yMax,
+          double duration)
+{
+    auto s = CreateObject<netsimulyzer::XYSeries>(g_viz->orchestrator);
+    s->SetAttribute("Name", StringValue(name));
+    s->SetAttribute("Legend", StringValue(name));
+    s->SetAttribute("Color", netsimulyzer::Color3Value(color));
+    s->SetAttribute("Connection", EnumValue(connection));
+    s->GetXAxis()->SetAttribute("Name", StringValue("Thời gian (s)"));
+    s->GetXAxis()->SetAttribute("BoundMode", EnumValue(netsimulyzer::ValueAxis::BoundMode::Fixed));
+    s->GetXAxis()->SetAttribute("Minimum", DoubleValue(0));
+    s->GetXAxis()->SetAttribute("Maximum", DoubleValue(duration));
+    s->GetYAxis()->SetAttribute("Name", StringValue(yAxis));
+    s->GetYAxis()->SetAttribute("BoundMode", EnumValue(netsimulyzer::ValueAxis::BoundMode::Fixed));
+    s->GetYAxis()->SetAttribute("Minimum", DoubleValue(0));
+    s->GetYAxis()->SetAttribute("Maximum", DoubleValue(yMax));
+    return s;
+}
+
+void
+VizArea(const Rectangle& bounds,
+        netsimulyzer::Color3 fill,
+        double z,
+        const std::string& name,
+        bool border)
+{
+    auto a = CreateObject<netsimulyzer::RectangularArea>(g_viz->orchestrator, bounds);
+    a->SetAttribute("Fill", EnumValue(netsimulyzer::RectangularArea::DrawMode::Solid));
+    a->SetAttribute("FillColor", netsimulyzer::Color3Value(fill));
+    a->SetAttribute("Height", DoubleValue(z));
+    a->SetAttribute("Name", StringValue(name));
+    if (border)
+    {
+        a->SetAttribute("BorderColor", netsimulyzer::Color3Value(netsimulyzer::GRAY_60));
+    }
+    else
+    {
+        a->SetAttribute("Border", EnumValue(netsimulyzer::RectangularArea::DrawMode::Hidden));
+    }
+}
+
+void
+VizDecoration(const std::string& model, const Vector3D& position)
+{
+    auto d = CreateObject<netsimulyzer::Decoration>(g_viz->orchestrator);
+    d->SetAttribute("Model", StringValue(model));
+    d->SetPosition(position);
+}
+
+void
+SetupViz(const std::string& path,
+         const std::string& layout,
+         double duration,
+         bool gatewayLevels,
+         bool environment,
+         bool cloud)
+{
+    g_viz = std::make_unique<Viz>();
+    Viz& v = *g_viz;
+    v.orchestrator = CreateObject<netsimulyzer::Orchestrator>(path);
+    v.orchestrator->SetAttribute("MobilityPollInterval", TimeValue(MilliSeconds(500)));
+    std::ostringstream gatewayIp;
+    gatewayIp << g_ip[0];
+    v.gatewayIp = gatewayIp.str();
+
+    // Nhà kính 1 ha theo layout.json: nền, lối đi giữa (trục x) và ray hai bên lối đi.
+    auto [width, depth] = JsonPair(layout, "greenhouse_m");
+    double aisleMin = JsonNumber(layout, "y_min");
+    double aisleMax = JsonNumber(layout, "y_max");
+    double firstX = JsonNumber(layout, "first_x");
+    double spacing = JsonNumber(layout, "spacing_m");
+    int perSide = int(JsonNumber(layout, "per_side"));
+    VizArea(Rectangle(0, width, 0, depth), {196, 228, 182}, 0, "Nhà kính", true);
+    VizArea(Rectangle(0, width, aisleMin, aisleMax), {205, 200, 190}, 0.02, "Lối đi giữa", false);
+    for (int k = 0; k < perSide; ++k)
+    {
+        double x = firstX + k * spacing;
+        VizArea(Rectangle(x - 0.15, x + 0.15, aisleMax, depth), {110, 110, 110}, 0.04, "Ray", false);
+        VizArea(Rectangle(x - 0.15, x + 0.15, 0, aisleMin), {110, 110, 110}, 0.04, "Ray", false);
+    }
+    // Khung thép, kính và hàng cà chua giữa mỗi cặp ray: mô hình OBJ trong
+    // simulation/netsimulyzer/models/caar/ (scripts/gen_greenhouse_models.py), chép vào
+    // resources/models/caar/ của trình xem.
+    if (environment)
+    {
+        VizDecoration("models/caar/frame.obj", Vector3D(0, 0, 0));
+        VizDecoration("models/caar/glass.obj", Vector3D(0, 0, 0));
+        for (int k = 0; k + 1 < perSide; ++k)
+        {
+            double x = firstX + (k + 0.5) * spacing;
+            VizDecoration("models/caar/plant_row.obj", Vector3D(x, (aisleMax + depth) / 2, 0));
+            VizDecoration("models/caar/plant_row.obj", Vector3D(x, aisleMin / 2, 0));
+        }
+    }
+
+    netsimulyzer::NodeConfigurationHelper gateway(v.orchestrator);
+    gateway.Set("Model", netsimulyzer::models::CELL_TOWER_POLE_VALUE);
+    gateway.Set("Height", netsimulyzer::OptionalValue<double>(4));
+    gateway.Install(g_nodes[0]);
+
+    netsimulyzer::NodeConfigurationHelper robot(v.orchestrator);
+    robot.Set("Model", netsimulyzer::models::LAND_DRONE_VALUE);
+    robot.Set("Height", netsimulyzer::OptionalValue<double>(0.8));
+    robot.Set("EnableMotionTrail", BooleanValue(true));
+    for (uint32_t i = 1; i <= g_nRobots; ++i)
+    {
+        robot.Install(g_nodes[i]);
+    }
+    for (uint32_t i = 0; i <= g_nRobots; ++i)
+    {
+        v.node.push_back(g_nodes[i]->GetObject<netsimulyzer::NodeConfiguration>());
+    }
+    v.route.resize(g_nRobots + 1);
+    v.nextHop.assign(g_nRobots + 1, kNoRoute);
+    size_t buckets = size_t(std::ceil(duration / kVizPdrBucketS)) + 1;
+    v.sent.assign(buckets, 0);
+    v.delivered.assign(buckets, 0);
+
+    using Conn = netsimulyzer::XYSeries::ConnectionType;
+    v.pdr = VizSeries("PDR (khung 10 s)", "PDR", netsimulyzer::DARK_GREEN, Conn::Line, 1, duration);
+    v.routed = VizSeries("Robot có đường AODV về Gateway",
+                         "Số robot",
+                         netsimulyzer::BLUE,
+                         Conn::StepFloor,
+                         g_nRobots,
+                         duration);
+    v.minBattery =
+        VizSeries("Pin thấp nhất (%)", "Pin (%)", netsimulyzer::DARK_RED, Conn::Line, 100, duration);
+    v.gatewayLog = CreateObject<netsimulyzer::LogStream>(v.orchestrator);
+    v.gatewayLog->SetAttribute("Name", StringValue("Gateway"));
+    v.routeLog = CreateObject<netsimulyzer::LogStream>(v.orchestrator);
+    v.routeLog->SetAttribute("Name", StringValue("Định tuyến AODV"));
+    if (gatewayLevels)
+    {
+        v.level = VizSeries("Mức hạ cấp Gateway",
+                            "Mức",
+                            netsimulyzer::DARK_ORANGE,
+                            Conn::StepFloor,
+                            3,
+                            duration);
+        v.level->Append(0, 1);
+    }
+
+    // Máy chủ Cloud (FastAPI trên AWS EC2) lơ lửng phía bắc nhà kính, nối với Gateway.
+    if (cloud)
+    {
+        v.cloud = CreateObject<Node>();
+        Ptr<ConstantPositionMobilityModel> m = CreateObject<ConstantPositionMobilityModel>();
+        m->SetPosition(Vector(width / 2, depth + 25, 12));
+        v.cloud->AggregateObject(m);
+        netsimulyzer::NodeConfigurationHelper server(v.orchestrator);
+        server.Set("Model", netsimulyzer::models::SERVER_VALUE);
+        server.Set("Height", netsimulyzer::OptionalValue<double>(5));
+        server.Install(v.cloud);
+        v.cloudConfig = v.cloud->GetObject<netsimulyzer::NodeConfiguration>();
+        if (g_anim)
+        {
+            // Node này cũng nằm trong NodeList nên NetAnim vẽ nó; đặt nhãn để không thành node lạ.
+            g_anim->UpdateNodeDescription(v.cloud, "Cloud (chỉ để vẽ 3D)");
+            g_anim->UpdateNodeColor(v.cloud, 120, 60, 160);
+        }
+        v.cloudLink = CreateObject<netsimulyzer::LogicalLink>(v.orchestrator,
+                                                              g_nodes[0]->GetId(),
+                                                              v.cloud->GetId(),
+                                                              CloudLinkColor(1));
+        v.cloudLog = CreateObject<netsimulyzer::LogStream>(v.orchestrator);
+        v.cloudLog->SetAttribute("Name", StringValue("Cloud"));
+        v.cloudBytes = VizSeries("Byte trao đổi với Cloud (kB, cộng dồn)",
+                                 "kB",
+                                 netsimulyzer::PURPLE,
+                                 Conn::Line,
+                                 1,
+                                 duration);
+        v.cloudBytes->GetYAxis()->SetAttribute(
+            "BoundMode",
+            EnumValue(netsimulyzer::ValueAxis::BoundMode::HighestValue));
+        v.cloudBytes->Append(0, 0);
+    }
+
+    Simulator::Schedule(Seconds(0), &VizStart);
+    Simulator::Schedule(Seconds(1), &VizRoutes);
+    Simulator::Schedule(Seconds(2 * kVizPdrBucketS), &VizPdr);
+}
+
+#else
+
+void
+VizOnSend(uint32_t)
+{
+}
+
+void
+VizOnDelivered(Time)
+{
+}
+
+void
+VizOnGatewayEvents(const std::vector<std::string>&, const std::string&)
+{
+}
+
+void
+VizOnCloudCall()
+{
+}
+
+void
+VizOnCloudReply(double, uint32_t, const std::string&, uint32_t)
+{
+}
+
+void
+VizOnCloudFailure(double, uint32_t)
+{
+}
+
+void
+SetupViz(const std::string&, const std::string&, double, bool, bool, bool)
+{
+    NS_ABORT_MSG("--netsimulyzer needs the NetSimulyzer module in ns-3 contrib/netsimulyzer "
+                 "(simulation/vm/setup-ubuntu.sh --netsimulyzer)");
+}
+
+#endif
+
+// ---------------------------------------------------------------------------
 // Lưu lượng robot -> Gateway (gói mang telemetry)
 // ---------------------------------------------------------------------------
 
@@ -461,6 +1004,7 @@ SendTelemetry(uint32_t r)
     PutU32(buf + 16, uint32_t(int32_t(std::lround(g_energyPct[r] * 1000))));
     PutU32(buf + 20, uint32_t(int32_t(std::lround(RobotRssiAvg(r) * 100))));
     g_robotSockets[r]->Send(Create<Packet>(buf, kPayloadBytes));
+    VizOnSend(r);
     if (InWindow(Simulator::Now().GetSeconds()))
     {
         ++g_dataTxWindow;
@@ -487,6 +1031,7 @@ OnGatewayRecv(Ptr<Socket> socket)
         double rssi = int32_t(GetU32(buf + 20)) / 100.0;
         Time txTime = NanoSeconds(txNs);
         g_delaysMs.push_back((Simulator::Now() - txTime).GetSeconds() * 1000);
+        VizOnDelivered(txTime);
         SocketIpTtlTag ttl;
         if (packet->RemovePacketTag(ttl))
         {
@@ -512,6 +1057,7 @@ LogEvents(const std::vector<std::string>& events, const std::string& payload)
         g_events.push_back({Simulator::Now().GetSeconds(), e, e == caar::kParamUpdate ? payload : ""});
     }
     g_activeWeights = g_gateway->Active();
+    VizOnGatewayEvents(events, payload);
     if (g_anim)
     {
         // Gateway: mức 1 xanh dương, mức 2 cam (dùng cache), mức 3 đỏ (bộ cân bằng).
@@ -565,16 +1111,18 @@ constexpr uint32_t kResponseBytes =
     1;
 
 void
-OnCloudReply(double callTime, caar::Decision decision)
+OnCloudReply(double callTime, uint32_t requestBytes, caar::Decision decision)
 {
     g_cloudBytes += kResponseBytes;
     LogEvents(g_gateway->OnReply(callTime, decision.weights), caar::RuleName(decision.rule));
+    VizOnCloudReply(callTime, requestBytes, caar::RuleName(decision.rule), kResponseBytes);
 }
 
 void
-OnCloudFailure(double callTime)
+OnCloudFailure(double callTime, uint32_t requestBytes)
 {
     LogEvents(g_gateway->OnFailure(callTime), "");
+    VizOnCloudFailure(callTime, requestBytes);
 }
 
 void
@@ -590,16 +1138,18 @@ GatewayTick()
     }
     else
     {
-        g_cloudBytes += SnapshotBytes(snapshot);
+        uint32_t requestBytes = SnapshotBytes(snapshot);
+        g_cloudBytes += requestBytes;
+        VizOnCloudCall();
         bool outage = t >= g_outageStart && t < g_outageEnd;
         Time rtt = MilliSeconds(g_wanConstantRttMs);
         if (outage || rtt >= g_cloudTimeout)
         {
-            Simulator::Schedule(g_cloudTimeout, &OnCloudFailure, t);
+            Simulator::Schedule(g_cloudTimeout, &OnCloudFailure, t, requestBytes);
         }
         else
         {
-            Simulator::Schedule(rtt, &OnCloudReply, t, decision);
+            Simulator::Schedule(rtt, &OnCloudReply, t, requestBytes, decision);
         }
     }
     Simulator::Schedule(g_period, &GatewayTick);
@@ -722,6 +1272,8 @@ main(int argc, char* argv[])
     std::string outPath;
     std::string fixedWeights;
     std::string netanimPath;
+    std::string netsimulyzerPath;
+    bool netsimulyzerEnv = true;
     bool destinationOnly = false;
     double netanimStart = 0;
     double netanimStop = -1;
@@ -756,6 +1308,12 @@ main(int argc, char* argv[])
                  destinationOnly);
     cmd.AddValue("netanim-start", "Bắt đầu ghi gói tin cho NetAnim (s)", netanimStart);
     cmd.AddValue("netanim-stop", "Dừng ghi gói tin cho NetAnim (s), âm = tới cuối", netanimStop);
+    cmd.AddValue("netsimulyzer",
+                 "Ghi cảnh 3D NetSimulyzer ra file JSON (trống = tắt)",
+                 netsimulyzerPath);
+    cmd.AddValue("netsimulyzer-env",
+                 "Cảnh 3D có khung thép, kính, hàng cà chua (cần models/caar trong trình xem)",
+                 netsimulyzerEnv);
     cmd.Parse(argc, argv);
 
     if (config == "no_cloud")
@@ -994,6 +1552,15 @@ main(int argc, char* argv[])
         g_animLastPos.assign(nodes + 1, Vector());
         RecordAnimPositions();
     }
+    if (!netsimulyzerPath.empty())
+    {
+        SetupViz(netsimulyzerPath,
+                 ReadFile(layoutPath),
+                 duration,
+                 g_config == SimConfig::kGatewayHeuristic || g_config == SimConfig::kCloudAssisted,
+                 netsimulyzerEnv,
+                 g_config == SimConfig::kCloudAssisted);
+    }
 
     FlowMonitorHelper flowHelper;
     Ptr<FlowMonitor> monitor = flowHelper.InstallAll();
@@ -1105,7 +1672,10 @@ main(int argc, char* argv[])
               << " events=" << g_events.size()
               << std::endl;
 
-    Simulator::Destroy();
+    Simulator::Destroy(); // NetSimulyzer ghi file JSON tại đây
+#if CAAR_HAS_NETSIMULYZER
+    g_viz.reset();
+#endif
     if (anim)
     {
         anim.reset(); // ghi </anim> và đóng file

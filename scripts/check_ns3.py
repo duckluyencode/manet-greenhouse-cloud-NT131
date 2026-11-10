@@ -14,6 +14,9 @@ Kiểm tra:
    có gói wifi trong cửa sổ ghi gói và vị trí robot cả ngoài cửa sổ đó.
 7. Hook delayed RREQ có tác dụng: khi chỉ Gateway trả lời RREQ, D_max 500 ms làm thời gian
    tìm đường dài hơn D_max 20 ms ít nhất 20 %.
+8. --netsimulyzer (chỉ khi ns-3 có contrib/netsimulyzer): cảnh 3D có nhà kính (nền, ray, khung
+   thép, kính, hàng cà chua), 11 node, đường
+   AODV, biểu đồ và log Gateway; CSV và log Gateway giống hệt lượt chạy không bật 3D.
 
 Chạy: python scripts/check_ns3.py --ns3 /opt/ns-3-dev --out /tmp/caar-check [--seeds 5]
 """
@@ -125,8 +128,9 @@ def main() -> None:
     check(again == rows["no_cloud"], "no_cloud seed 1 run twice gives identical rows")
 
     print("3. cloud outage 300-600 s, TTL 60 s")
-    run_caar(args.ns3, raw / "cloud_assisted_outage_1.csv", "cloud_assisted", 1, "outage",
-             "--ttl=60", "--dmax=20", "--outage-start=300", "--outage-end=600")
+    outage_args = ("--ttl=60", "--dmax=20", "--outage-start=300", "--outage-end=600")
+    outage_row = run_caar(args.ns3, raw / "cloud_assisted_outage_1.csv", "cloud_assisted", 1, "outage",
+                          *outage_args)
     events = read_events(raw / "cloud_assisted_outage_1_events.csv")
     order = [e["event_type"] for e in events if e["event_type"] != "param_update"]
     check(order == ["outage_start", "stale_detected", "outage_end"],
@@ -183,6 +187,53 @@ def main() -> None:
         discovery[dmax] = float(row["route_discovery_ms"])
     check(discovery[500] > 1.2 * discovery[20],
           f"route discovery {discovery[20]:.0f} ms (D_max 20) -> {discovery[500]:.0f} ms (D_max 500)")
+
+    if (args.ns3 / "contrib" / "netsimulyzer").is_dir():
+        print("8. NetSimulyzer 3D scene (cloud outage, seed 1)")
+        scene_path = args.out / "3d" / "outage.json"
+        row = run_caar(args.ns3, args.out / "3d" / "outage.csv", "cloud_assisted", 1, "outage",
+                       *outage_args, f"--netsimulyzer={scene_path}")
+        check(row == outage_row, "CSV row identical with and without --netsimulyzer")
+        check(read_events(args.out / "3d" / "outage_events.csv")
+              == read_events(raw / "cloud_assisted_outage_1_events.csv"),
+              "Gateway log identical with and without --netsimulyzer")
+        scene = json.loads(scene_path.read_text(encoding="utf-8")) if scene_path.exists() else {}
+        layout = json.loads((CONTRACTS / "waypoints" / "layout.json").read_text(encoding="utf-8"))
+        check(len(scene.get("areas", [])) == 2 + 2 * layout["rails"]["per_side"],
+              f"greenhouse floor, aisle and {2 * layout['rails']['per_side']} rails drawn")
+        node_models = [n["model"] for n in scene.get("nodes", [])]
+        check(len(node_models) == 12 and node_models[-1].endswith("server.obj"),
+              "Gateway, 10 robots and the Cloud server in the scene")
+        models = [d["model"] for d in scene.get("decorations", [])]
+        check(models.count("models/caar/plant_row.obj") == 2 * (layout["rails"]["per_side"] - 1)
+              and "models/caar/frame.obj" in models and "models/caar/glass.obj" in models,
+              f"steel frame, glass and {2 * (layout['rails']['per_side'] - 1)} tomato rows placed")
+        kinds = [e["type"] for e in scene.get("events", [])]
+        check("logical-link-create" in kinds and "logical-link-update" in kinds, "AODV route links drawn")
+        charts = {"PDR (khung 10 s)", "Robot có đường AODV về Gateway", "Pin thấp nhất (%)",
+                  "Mức hạ cấp Gateway", "Byte trao đổi với Cloud (kB, cộng dồn)"}
+        check({s["name"] for s in scene.get("series", [])} == charts,
+              "5 charts: PDR, routed robots, lowest battery, Gateway level, Cloud bytes")
+        logged = " ".join(e.get("data", "") for e in scene.get("events", []) if e["type"] == "stream-append")
+        check(all(e in logged for e in ("outage_start", "stale_detected", "outage_end")),
+              "Gateway log stream has the outage events")
+        cloud_id = next((s["id"] for s in scene.get("streams", []) if s["name"] == "Cloud"), None)
+        cloud_lines = [e["data"] for e in scene.get("events", [])
+                       if e["type"] == "stream-append" and e.get("stream-id") == cloud_id]
+        # Gateway gọi Cloud mỗi T giây từ giây T tới trước khi hết thời gian mô phỏng; lần gọi rơi
+        # vào [outage_start, outage_end) kết thúc bằng timeout. Lấy T và cửa sổ mất Cloud từ chính
+        # lượt chạy, thời gian mô phỏng từ cảnh 3D.
+        params = json.loads(outage_row["params"])
+        period = params["period_s"]
+        duration = scene.get("configuration", {}).get("max-time", 0) / 1e9
+        call_times = [k * period for k in range(1, int(duration / period + 1e-9))
+                      if k * period < duration]
+        calls = len(call_times)
+        timeouts = sum(params["outage_start_s"] <= t < params["outage_end_s"] for t in call_times)
+        check(len(cloud_lines) == calls and sum("timeout" in x for x in cloud_lines) == timeouts,
+              f"Cloud log: {len(cloud_lines)} calls to /optimize, {timeouts} timeouts during the outage")
+    else:
+        print("8. NetSimulyzer check skipped (no contrib/netsimulyzer in ns-3)")
 
     print()
     if failures:

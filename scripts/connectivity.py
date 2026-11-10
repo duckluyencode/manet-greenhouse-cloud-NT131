@@ -9,6 +9,7 @@ AODV, nên đây là cận trên của khả năng định tuyến.
 
 Chạy: python scripts/connectivity.py                       # 6, 10, 16, 20 robot × seed 1..10
       python scripts/connectivity.py --nodes 10 --seeds 1 2 3
+      python scripts/connectivity.py --nodes 10 --range 17.85    # radio 16 dBm, không anten
 """
 import argparse
 import csv
@@ -76,9 +77,11 @@ def main() -> None:
     parser.add_argument("--nodes", type=int, nargs="+", default=[6, 10, 16, 20])
     parser.add_argument("--seeds", type=int, nargs="+", default=list(range(1, 11)))
     parser.add_argument("--step", type=float, default=1.0, help="bước lấy mẫu (s)")
+    parser.add_argument("--range", type=float, help="tầm liên kết (m); mặc định link_range_m trong channel.json")
     args = parser.parse_args()
 
-    range_m = json.loads(CHANNEL.read_text(encoding="utf-8"))["link_range_m"]
+    range_m = (args.range if args.range is not None
+               else json.loads(CHANNEL.read_text(encoding="utf-8"))["link_range_m"])
     gx, gy = json.loads((WAYPOINTS / "layout.json").read_text(encoding="utf-8"))["gateway_xy"]
     print(f"Tầm liên kết {range_m} m, Gateway ({gx}, {gy}), seed {args.seeds}")
     print()
