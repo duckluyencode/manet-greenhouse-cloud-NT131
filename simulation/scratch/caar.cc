@@ -720,6 +720,10 @@ VizStart()
 {
     g_viz->node[0]->SetName("Gateway L1");
     g_viz->node[0]->SetBaseColor(LevelColor(1));
+    if (g_viz->cloudConfig)
+    {
+        g_viz->cloudConfig->SetName("Cloud (FastAPI, AWS EC2)");
+    }
     VizRobots();
 }
 
