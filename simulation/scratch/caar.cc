@@ -461,7 +461,7 @@ struct Viz
     Ptr<netsimulyzer::LogicalLink> cloudLink;
     Ptr<netsimulyzer::LogStream> cloudLog;
     Ptr<netsimulyzer::XYSeries> cloudBytes;
-    uint32_t cloudRequestBytes = 0; // byte NetworkSnapshot của lần gọi đang chờ
+    std::string gatewayIp; // địa chỉ Gateway dạng chuỗi, để dò bảng AODV
 };
 
 std::unique_ptr<Viz> g_viz;
@@ -480,12 +480,11 @@ LevelColor(int level)
     return level == 1 ? netsimulyzer::BLUE : level == 2 ? netsimulyzer::ORANGE : netsimulyzer::RED;
 }
 
-// Đường Gateway–Cloud: xanh lá khi Cloud trả lời (L1), cam khi đang dùng cache (L2), đỏ khi
-// cache quá TTL (L3).
+// Đường Gateway–Cloud: xanh lá khi Cloud trả lời (L1), còn lại cùng màu với Gateway (cam L2, đỏ L3).
 netsimulyzer::Color3
 CloudLinkColor(int level)
 {
-    return level == 1 ? netsimulyzer::GREEN : level == 2 ? netsimulyzer::ORANGE : netsimulyzer::RED;
+    return level == 1 ? netsimulyzer::GREEN : LevelColor(level);
 }
 
 std::string
@@ -504,8 +503,7 @@ NextHopToGateway(uint32_t robot)
         DynamicCast<aodv::RoutingProtocol>(g_nodes[robot]->GetObject<Ipv4>()->GetRoutingProtocol());
     std::ostringstream table;
     routing->PrintRoutingTable(Create<OutputStreamWrapper>(&table), Time::S);
-    std::ostringstream gateway;
-    gateway << g_ip[0];
+    const std::string& gateway = g_viz->gatewayIp;
     std::istringstream in(table.str());
     std::string line;
     while (std::getline(in, line))
@@ -515,7 +513,7 @@ NextHopToGateway(uint32_t robot)
         std::string hop;
         std::string iface;
         std::string flag;
-        if (fields >> dst >> hop >> iface >> flag && dst == gateway.str() && flag == "UP")
+        if (fields >> dst >> hop >> iface >> flag && dst == gateway && flag == "UP")
         {
             auto it = g_ipToIdx.find(Ipv4Address(hop.c_str()));
             return it == g_ipToIdx.end() ? kNoRoute : it->second;
@@ -666,52 +664,59 @@ VizOnGatewayEvents(const std::vector<std::string>& events, const std::string& pa
     }
 }
 
-// Gateway gọi POST /optimize: vòng sáng ở Gateway, ghi nhớ số byte gửi lên.
+// Gateway gọi POST /optimize: vòng sáng ở Gateway.
 void
-VizOnCloudCall(uint32_t requestBytes)
+VizOnCloudCall()
 {
     if (!g_viz || !g_viz->cloud)
     {
         return;
     }
-    g_viz->cloudRequestBytes = requestBytes;
     g_viz->node[0]->Transmit(MilliSeconds(500), 6.0, netsimulyzer::BLUE);
 }
 
+// Một dòng log Cloud: "<giờ> s  <kết quả>  (L<mức>)", kèm điểm byte cộng dồn.
 void
-VizOnCloudReply(double callTime, const std::string& rule, uint32_t responseBytes)
+VizCloudLog(const std::string& outcome)
 {
-    if (!g_viz || !g_viz->cloud)
-    {
-        return;
-    }
     Viz& v = *g_viz;
     double now = Simulator::Now().GetSeconds();
-    v.cloudConfig->Transmit(MilliSeconds(500), 6.0, netsimulyzer::GREEN);
     std::ostringstream line;
-    line << std::fixed << std::setprecision(2) << now << " s  /optimize: gửi " << v.cloudRequestBytes
-         << " B, nhận " << responseBytes << " B sau " << std::lround((now - callTime) * 1000)
-         << " ms → " << rule << "  (L" << static_cast<int>(g_gateway->level()) << ")\n";
+    line << std::fixed << std::setprecision(2) << now << " s  " << outcome << "  (L"
+         << static_cast<int>(g_gateway->level()) << ")\n";
     v.cloudLog->Write(line.str());
     v.cloudBytes->Append(now, g_cloudBytes / 1000.0);
 }
 
 void
-VizOnCloudFailure(double callTime)
+VizOnCloudReply(double callTime,
+                uint32_t requestBytes,
+                const std::string& rule,
+                uint32_t responseBytes)
 {
     if (!g_viz || !g_viz->cloud)
     {
         return;
     }
-    Viz& v = *g_viz;
-    double now = Simulator::Now().GetSeconds();
-    std::ostringstream line;
-    line << std::fixed << std::setprecision(2) << now << " s  /optimize gọi lúc " << callTime
-         << " s: gửi " << v.cloudRequestBytes << " B, không có trả lời sau "
-         << std::lround(now - callTime) << " s (timeout)  (L" << static_cast<int>(g_gateway->level())
-         << ")\n";
-    v.cloudLog->Write(line.str());
-    v.cloudBytes->Append(now, g_cloudBytes / 1000.0);
+    g_viz->cloudConfig->Transmit(MilliSeconds(500), 6.0, netsimulyzer::GREEN);
+    double rttMs = (Simulator::Now().GetSeconds() - callTime) * 1000;
+    VizCloudLog("/optimize: gửi " + std::to_string(requestBytes) + " B, nhận " +
+                std::to_string(responseBytes) + " B sau " + std::to_string(std::lround(rttMs)) +
+                " ms → " + rule);
+}
+
+void
+VizOnCloudFailure(double callTime, uint32_t requestBytes)
+{
+    if (!g_viz || !g_viz->cloud)
+    {
+        return;
+    }
+    std::ostringstream outcome;
+    outcome << std::fixed << std::setprecision(2) << "/optimize gọi lúc " << callTime << " s: gửi "
+            << requestBytes << " B, không có trả lời sau "
+            << std::lround(Simulator::Now().GetSeconds() - callTime) << " s (timeout)";
+    VizCloudLog(outcome.str());
 }
 
 // Đặt tên/màu ban đầu ở t = 0, sau khi Orchestrator dựng xong cảnh.
@@ -793,6 +798,9 @@ SetupViz(const std::string& path,
     Viz& v = *g_viz;
     v.orchestrator = CreateObject<netsimulyzer::Orchestrator>(path);
     v.orchestrator->SetAttribute("MobilityPollInterval", TimeValue(MilliSeconds(500)));
+    std::ostringstream gatewayIp;
+    gatewayIp << g_ip[0];
+    v.gatewayIp = gatewayIp.str();
 
     // Nhà kính 1 ha theo layout.json: nền, lối đi giữa (trục x) và ray hai bên lối đi.
     auto [width, depth] = JsonPair(layout, "greenhouse_m");
@@ -884,6 +892,12 @@ SetupViz(const std::string& path,
         server.Set("Height", netsimulyzer::OptionalValue<double>(5));
         server.Install(v.cloud);
         v.cloudConfig = v.cloud->GetObject<netsimulyzer::NodeConfiguration>();
+        if (g_anim)
+        {
+            // Node này cũng nằm trong NodeList nên NetAnim vẽ nó; đặt nhãn để không thành node lạ.
+            g_anim->UpdateNodeDescription(v.cloud, "Cloud (chỉ để vẽ 3D)");
+            g_anim->UpdateNodeColor(v.cloud, 120, 60, 160);
+        }
         v.cloudLink = CreateObject<netsimulyzer::LogicalLink>(v.orchestrator,
                                                               g_nodes[0]->GetId(),
                                                               v.cloud->GetId(),
@@ -925,17 +939,17 @@ VizOnGatewayEvents(const std::vector<std::string>&, const std::string&)
 }
 
 void
-VizOnCloudCall(uint32_t)
+VizOnCloudCall()
 {
 }
 
 void
-VizOnCloudReply(double, const std::string&, uint32_t)
+VizOnCloudReply(double, uint32_t, const std::string&, uint32_t)
 {
 }
 
 void
-VizOnCloudFailure(double)
+VizOnCloudFailure(double, uint32_t)
 {
 }
 
@@ -1097,18 +1111,18 @@ constexpr uint32_t kResponseBytes =
     1;
 
 void
-OnCloudReply(double callTime, caar::Decision decision)
+OnCloudReply(double callTime, uint32_t requestBytes, caar::Decision decision)
 {
     g_cloudBytes += kResponseBytes;
     LogEvents(g_gateway->OnReply(callTime, decision.weights), caar::RuleName(decision.rule));
-    VizOnCloudReply(callTime, caar::RuleName(decision.rule), kResponseBytes);
+    VizOnCloudReply(callTime, requestBytes, caar::RuleName(decision.rule), kResponseBytes);
 }
 
 void
-OnCloudFailure(double callTime)
+OnCloudFailure(double callTime, uint32_t requestBytes)
 {
     LogEvents(g_gateway->OnFailure(callTime), "");
-    VizOnCloudFailure(callTime);
+    VizOnCloudFailure(callTime, requestBytes);
 }
 
 void
@@ -1126,16 +1140,16 @@ GatewayTick()
     {
         uint32_t requestBytes = SnapshotBytes(snapshot);
         g_cloudBytes += requestBytes;
-        VizOnCloudCall(requestBytes);
+        VizOnCloudCall();
         bool outage = t >= g_outageStart && t < g_outageEnd;
         Time rtt = MilliSeconds(g_wanConstantRttMs);
         if (outage || rtt >= g_cloudTimeout)
         {
-            Simulator::Schedule(g_cloudTimeout, &OnCloudFailure, t);
+            Simulator::Schedule(g_cloudTimeout, &OnCloudFailure, t, requestBytes);
         }
         else
         {
-            Simulator::Schedule(rtt, &OnCloudReply, t, decision);
+            Simulator::Schedule(rtt, &OnCloudReply, t, requestBytes, decision);
         }
     }
     Simulator::Schedule(g_period, &GatewayTick);

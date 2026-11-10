@@ -80,7 +80,8 @@ def main() -> None:
     parser.add_argument("--range", type=float, help="tầm liên kết (m); mặc định link_range_m trong channel.json")
     args = parser.parse_args()
 
-    range_m = args.range or json.loads(CHANNEL.read_text(encoding="utf-8"))["link_range_m"]
+    range_m = (args.range if args.range is not None
+               else json.loads(CHANNEL.read_text(encoding="utf-8"))["link_range_m"])
     gx, gy = json.loads((WAYPOINTS / "layout.json").read_text(encoding="utf-8"))["gateway_xy"]
     print(f"Tầm liên kết {range_m} m, Gateway ({gx}, {gy}), seed {args.seeds}")
     print()

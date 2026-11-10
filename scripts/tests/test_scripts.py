@@ -233,7 +233,7 @@ def test_greenhouse_columns_clear_rails_and_plants() -> None:
     rail_x = [rails["first_x"] + k * rails["spacing_m"] for k in range(rails["per_side"])]
     plant_x = [x + rails["spacing_m"] / 2 for x in rail_x[:-1]]
     columns = gen_greenhouse_models.gutter_lines(layout["greenhouse_m"][0], rails["first_x"],
-                                                 rails["spacing_m"])
+                                                 rails["spacing_m"], rails["per_side"])
     assert columns[0] == 0 and columns[-1] == layout["greenhouse_m"][0]
     for c in columns[1:-1]:
         assert min(abs(c - x) for x in rail_x + plant_x) >= 0.4, c

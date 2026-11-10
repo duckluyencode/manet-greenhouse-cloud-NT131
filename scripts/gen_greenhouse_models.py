@@ -152,9 +152,10 @@ def _hash01(*keys: int) -> float:
     return h / 2**32
 
 
-def gutter_lines(width: float, first_x: float, spacing: float) -> list[float]:
-    """Đường máng xối (hàng cột): hai vách và mỗi ~9 m bên trong, đặt giữa ray và hàng cây."""
-    inner = [first_x + spacing * k - spacing / 4 for k in range(5, 60, 5)]
+def gutter_lines(width: float, first_x: float, spacing: float, per_side: int) -> list[float]:
+    """Đường máng xối (hàng cột): hai vách và cứ 5 ray (~9 m) một đường bên trong, đặt giữa ray
+    và hàng cây; số đường theo số ray mỗi bên nên nhà kính rộng hơn vẫn có cột khắp nơi."""
+    inner = [first_x + spacing * k - spacing / 4 for k in range(5, per_side, 5)]
     return [0.0, *[x for x in inner if 1 < x < width - 1], width]
 
 
@@ -162,7 +163,7 @@ def build_frame(layout: dict) -> tuple[Mesh, Mesh]:
     width, depth = layout["greenhouse_m"]
     aisle_min, aisle_max = layout["aisle"]["y_min"], layout["aisle"]["y_max"]
     rails = layout["rails"]
-    xs = gutter_lines(width, rails["first_x"], rails["spacing_m"])
+    xs = gutter_lines(width, rails["first_x"], rails["spacing_m"], rails["per_side"])
     ys = [i * TRUSS_STEP for i in range(int(depth / TRUSS_STEP) + 1)]
     frame, glass = Mesh(), Mesh()
     steel, light = "steel", "steel_light"

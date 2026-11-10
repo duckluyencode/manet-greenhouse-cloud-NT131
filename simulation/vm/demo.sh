@@ -33,7 +33,12 @@ NAME="${CONFIG}_${SCENARIO}_n${NODES}_s${SEED}"
 EXTRA=""
 [[ "$SCENARIO" == "outage" ]] && EXTRA="--outage-start=300 --outage-end=600"
 SCENE=""
-[[ -d "$NS3_DIR/contrib/netsimulyzer" ]] && SCENE="$OUT_DIR/$NAME.json" && EXTRA+=" --netsimulyzer=$SCENE"
+# Chỉ bật cảnh 3D khi ns-3 đã được cấu hình kèm module (có thư mục contrib/netsimulyzer chưa đủ:
+# cấu hình lại với NETSIMULYZER=0 thì caar không có module và sẽ dừng nếu nhận --netsimulyzer).
+if grep -q '^NS3_ENABLED_MODULES:.*netsimulyzer' "$NS3_DIR/cmake-cache/CMakeCache.txt" 2>/dev/null; then
+  SCENE="$OUT_DIR/$NAME.json"
+  EXTRA+=" --netsimulyzer=$SCENE"
+fi
 
 echo "Kịch bản: $CONFIG / $SCENARIO, $NODES robot, seed $SEED (900 s mô phỏng)"
 cd "$NS3_DIR"

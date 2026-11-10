@@ -220,8 +220,16 @@ def main() -> None:
         cloud_id = next((s["id"] for s in scene.get("streams", []) if s["name"] == "Cloud"), None)
         cloud_lines = [e["data"] for e in scene.get("events", [])
                        if e["type"] == "stream-append" and e.get("stream-id") == cloud_id]
-        calls = len(range(5, 900, 5))       # Gateway gọi Cloud mỗi 5 s: 5, 10, ..., 895 s
-        timeouts = len(range(300, 600, 5))  # các lần gọi rơi vào lúc mất Cloud
+        # Gateway gọi Cloud mỗi T giây từ giây T tới trước khi hết thời gian mô phỏng; lần gọi rơi
+        # vào [outage_start, outage_end) kết thúc bằng timeout. Lấy T và cửa sổ mất Cloud từ chính
+        # lượt chạy, thời gian mô phỏng từ cảnh 3D.
+        params = json.loads(outage_row["params"])
+        period = params["period_s"]
+        duration = scene.get("configuration", {}).get("max-time", 0) / 1e9
+        call_times = [k * period for k in range(1, int(duration / period + 1e-9))
+                      if k * period < duration]
+        calls = len(call_times)
+        timeouts = sum(params["outage_start_s"] <= t < params["outage_end_s"] for t in call_times)
         check(len(cloud_lines) == calls and sum("timeout" in x for x in cloud_lines) == timeouts,
               f"Cloud log: {len(cloud_lines)} calls to /optimize, {timeouts} timeouts during the outage")
     else:
