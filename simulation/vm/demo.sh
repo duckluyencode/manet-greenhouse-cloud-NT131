@@ -7,7 +7,9 @@
 #   bash simulation/vm/demo.sh no_cloud baseline        # AODV gốc
 #   bash simulation/vm/demo.sh local_optimized baseline 3 20   # seed 3, 20 robot
 #
-# Tham số: [config] [scenario] [seed] [số robot]
+# Tham số: [config] [scenario] [seed] [số robot] [tham số caar thêm...]
+#   tham số thêm ghi đè mặc định, ví dụ đổi TTL rồi chạy lại:
+#     bash simulation/vm/demo.sh cloud_assisted outage 1 10 --ttl=15 --outage-start=200
 #   config:   no_cloud | local_optimized | gateway_heuristic | cloud_assisted
 #   scenario: baseline | outage (mất cloud 300–600 s, chỉ có tác dụng với cloud_assisted)
 # Cửa sổ ghi gói tin cho NetAnim: NETANIM_START / NETANIM_STOP (mặc định 290–320 s).
@@ -30,6 +32,10 @@ WAYPOINTS="$REPO/contracts/waypoints/${NODES}_${SEED}.csv"
 OUT_DIR="$REPO/results/demo"
 mkdir -p "$OUT_DIR"
 NAME="${CONFIG}_${SCENARIO}_n${NODES}_s${SEED}"
+# Tham số thêm vào tên tệp để không ghi đè lượt chạy mặc định: --ttl=15 -> _ttl_15
+if [[ $# -gt 4 ]]; then
+  NAME+="_$(printf '%s' "${*:5}" | tr -d '-' | tr ' =/' '_' | tr -cd 'A-Za-z0-9_.')"
+fi
 EXTRA=""
 [[ "$SCENARIO" == "outage" ]] && EXTRA="--outage-start=300 --outage-end=600"
 SCENE=""
@@ -39,6 +45,7 @@ if grep -q '^NS3_ENABLED_MODULES:.*netsimulyzer' "$NS3_DIR/cmake-cache/CMakeCach
   SCENE="$OUT_DIR/$NAME.json"
   EXTRA+=" --netsimulyzer=$SCENE"
 fi
+EXTRA+=" ${*:5}"
 
 echo "Kịch bản: $CONFIG / $SCENARIO, $NODES robot, seed $SEED (900 s mô phỏng)"
 cd "$NS3_DIR"

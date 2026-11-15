@@ -232,6 +232,14 @@ def main() -> None:
         timeouts = sum(params["outage_start_s"] <= t < params["outage_end_s"] for t in call_times)
         check(len(cloud_lines) == calls and sum("timeout" in x for x in cloud_lines) == timeouts,
               f"Cloud log: {len(cloud_lines)} calls to /optimize, {timeouts} timeouts during the outage")
+        stream_ids = {s["name"]: s["id"] for s in scene.get("streams", [])}
+        check("Thiết lập" in stream_ids, "setup log stream lists the run parameters")
+        metric_lines = [e["data"] for e in scene.get("events", [])
+                        if e["type"] == "stream-append" and e.get("stream-id") == stream_ids.get("Số đo")]
+        last = (re.search(r"PDR = nhận/gửi = (\d+)/(\d+)", metric_lines[-1])
+                if metric_lines else None)
+        check(last is not None and abs(int(last[1]) / int(last[2]) - float(row["pdr"])) < 1e-5,
+              "last 'Số đo' line in the scene gives the same PDR as the CSV")
     else:
         print("8. NetSimulyzer check skipped (no contrib/netsimulyzer in ns-3)")
 

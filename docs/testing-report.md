@@ -6,10 +6,10 @@ Theo mục 14 của tài liệu đồ án.
 
 | Tầng | Công cụ | Chạy khi | Kết quả |
 |---|---|---|---|
-| Unit/API cloud | pytest + TestClient (`cloud-service/tests/`) | CI mỗi push | 34 test pass |
+| Unit/API cloud | pytest + TestClient (`cloud-service/tests/`) | CI mỗi push | 36 test pass |
 | Parity Python ↔ C++ | `contracts/parity_cases.json` + `simulation/caar-logic/test_caar_logic.cpp` | CI mỗi push | 704 kiểm tra pass |
-| Script phân tích | pytest (`scripts/tests/`) | CI mỗi push | 18 test pass |
-| Tính đúng mô phỏng | `scripts/check_ns3.py` trên ns-3.48 | CI job `ns3` mỗi push | 7 nhóm kiểm tra pass |
+| Script phân tích | pytest (`scripts/tests/`) | CI mỗi push | 21 test pass |
+| Tính đúng mô phỏng | `scripts/check_ns3.py` trên ns-3.48 | CI job `ns3` mỗi push | 7 nhóm kiểm tra pass (nhóm 8, cảnh 3D, chạy trên máy có NetSimulyzer) |
 | Đầu-cuối | HTTPS tới EC2 ap-southeast-1 | Trước demo | 4/4 pass (bảng dưới) |
 
 ## Test case cloud (bảng 14.2) — `tests/test_api.py`
@@ -53,7 +53,7 @@ Thêm: sai key (401), server chưa cấu hình key (503), nonce gửi lại (400
 | 4 cấu hình chạy được, CSV đúng hợp đồng, nhập được vào SQLite | `check_ns3.py` nhóm 1, 5 |
 | Phép đo cơ chế hợp lệ: mất gói do không có đường ≤ tổng mất gói, số hop ≥ 1, RSSI link chở dữ liệu ≥ ngưỡng thu | `check_ns3.py` nhóm 1 |
 | NetAnim ghi đủ 3 mức Gateway, gói tin trong cửa sổ ghi gói và vị trí robot cả ngoài cửa sổ | `check_ns3.py` nhóm 6 |
-| Cảnh 3D NetSimulyzer có nhà kính (114 vùng, khung thép, kính, 110 hàng cà chua), Gateway + 10 robot + máy chủ Cloud, đường AODV, 5 biểu đồ, log mất cloud, log Cloud 179 lần gọi (60 timeout); CSV và log Gateway giống hệt lượt chạy không bật 3D | `check_ns3.py` nhóm 8 (máy có module NetSimulyzer; CI bỏ qua) |
+| Cảnh 3D NetSimulyzer có nhà kính (114 vùng, khung thép, kính, 110 hàng cà chua), Gateway + 10 robot + máy chủ Cloud, đường AODV, 5 biểu đồ, log mất cloud, log Cloud 179 lần gọi (60 timeout), luồng Thiết lập, dòng Số đo cuối cho cùng PDR với CSV; CSV và log Gateway giống hệt lượt chạy không bật 3D | `check_ns3.py` nhóm 8 (máy có module NetSimulyzer; CI bỏ qua) |
 | Hook delayed RREQ có tác dụng: D_max 500 ms làm thời gian tìm đường dài hơn D_max 20 ms (766 → 1.141 ms ở seed 1) | `check_ns3.py` nhóm 7 |
 | Tầm liên kết 29,35 m với WiFi 20 dBm, anten 3 dBi mỗi đầu, ngưỡng thu −82 dBm | `contracts/channel.json`, `test_contract_channel_json` |
 | Mọi waypoint nằm trên lối chính hoặc hàng ray, trong nhà kính 100 × 100 m | `test_committed_waypoint_files_are_valid` |
@@ -80,13 +80,13 @@ Cloud service trên EC2 t3.micro (ap-southeast-1), HTTPS qua Caddy, gọi từ T
 |---|---|---|
 | Q1 | Bác bỏ (p = 0,87) | PDR 0,523 so với 0,518; số hop, RSSI link, tỷ lệ chuyển tiếp của robot yếu pin không đổi |
 | Q2a | Bác bỏ (p = 0,98) | Heuristic toàn mạng không thêm lợi ích so với trọng số cố định |
-| Q2b | Xác nhận (p = 0,99) | Kênh cloud không lỗi, RTT 40 ms |
-| Q3 | Xác nhận | PDR trong khoảng mất cloud 0,59 so với 0,55 của no_cloud |
+| Q2b | Không phát hiện khác biệt (p = 0,99) | Kênh cloud không lỗi, RTT 40 ms; không chứng minh tương đương |
+| Q3 | Xác nhận | PDR trong khoảng mất cloud 0,59 so với 0,55 của no_cloud (Welch p = 0,52; ghép cặp p = 0,017) |
 
 - Mất gói đổi bản chất theo mật độ (S3): 6 robot/ha mất 42 % vì không có đường; 16–20 robot/ha
   gần như luôn có đường nhưng mất 46–50 % trên link (tranh chấp kênh, flood RREQ/HELLO).
-- Ở 20 robot/ha có xu hướng local_optimized cao hơn no_cloud (0,519 so với 0,483, p = 0,125),
-  chưa có ý nghĩa thống kê.
+- Ở 20 robot/ha local_optimized cao hơn no_cloud (0,519 so với 0,483): Welch p = 0,125 (tiêu chí chính,
+  chưa đạt), ghép cặp theo seed p = 0,003; gateway_heuristic 0,539, ghép cặp p = 0,007.
 - Độ nhạy (10 robot): với D_max 5, 10, 20 ms, PDR của local_optimized là 0,536 / 0,522 / 0,523,
   không khác no_cloud ở S1 (p = 0,54 / 0,89 / 0,87), nên kết luận Q1 không phụ thuộc D_max;
   cloud_assisted bám sát local_optimized ở mọi D_max. Ở 1 m/s, PDR là 0,549 (local_optimized) và

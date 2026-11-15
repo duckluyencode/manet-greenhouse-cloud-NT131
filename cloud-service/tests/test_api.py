@@ -79,6 +79,11 @@ def test_invalid_node_rejected(client, bad_node) -> None:
     assert optimize(client, snapshot([bad_node])).status_code == 422
 
 
+@pytest.mark.parametrize("run_id", [-1, 2**63])
+def test_run_id_out_of_range_rejected(client, run_id) -> None:
+    assert optimize(client, snapshot([node(1)], run_id=run_id)).status_code == 422
+
+
 def test_empty_nodes_rejected(client) -> None:
     assert optimize(client, snapshot([])).status_code == 422
 

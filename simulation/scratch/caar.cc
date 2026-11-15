@@ -169,6 +169,12 @@ uint64_t g_dataForwards = 0; // lượt robot chuyển tiếp gói dữ liệu
 uint64_t g_weakForwards = 0; // ... trong lúc pin robot dưới kWeakBatteryPct
 std::vector<Mac48Address> g_mac;
 std::vector<GatewayEvent> g_events;
+// Gói Gateway đã nhận theo (robot, seq), để log "Số đo" của cảnh 3D tách bản trùng; không đổi CSV.
+std::vector<std::vector<bool>> g_rxSeen;
+uint64_t g_rxUnique = 0;
+// PDR trong CSV lấy từ FlowMonitor; log "Số đo" đọc cùng bộ đếm để hai số khớp nhau.
+Ptr<FlowMonitor> g_monitor;
+Ptr<Ipv4FlowClassifier> g_classifier;
 
 // ---------------------------------------------------------------------------
 // Đọc file hợp đồng
@@ -437,6 +443,21 @@ OnRouteDiscovery(Ipv4Address /*dst*/, Time duration)
 
 #if CAAR_HAS_NETSIMULYZER
 
+// Gói dữ liệu robot -> Gateway mà FlowMonitor đã ghi nhận là tới nơi.
+uint64_t
+FlowMonitorDataRx()
+{
+    uint64_t rx = 0;
+    for (const auto& [id, st] : g_monitor->GetFlowStats())
+    {
+        if (g_classifier->FindFlow(id).destinationPort == kDataPort)
+        {
+            rx += st.rxPackets;
+        }
+    }
+    return rx;
+}
+
 constexpr uint32_t kNoRoute = std::numeric_limits<uint32_t>::max();
 constexpr double kVizPdrBucketS = 10;
 
@@ -454,6 +475,9 @@ struct Viz
     Ptr<netsimulyzer::XYSeries> level; // chỉ có ở gateway_heuristic và cloud_assisted
     Ptr<netsimulyzer::LogStream> gatewayLog;
     Ptr<netsimulyzer::LogStream> routeLog;
+    Ptr<netsimulyzer::LogStream> setupLog;   // tham số của lượt chạy, ghi một lần ở t = 0
+    Ptr<netsimulyzer::LogStream> metricsLog; // bộ đếm và chỉ số tính từ chúng, mỗi 60 s
+    std::string setup;
     // Kênh Gateway–Cloud (chỉ cloud_assisted). Cloud không phải node mạng trong mô phỏng: node này
     // không có card mạng hay IP, chỉ để vẽ máy chủ và đường nối.
     Ptr<Node> cloud;
@@ -719,10 +743,73 @@ VizOnCloudFailure(double callTime, uint32_t requestBytes)
     VizCloudLog(outcome.str());
 }
 
+// "a/b = 0.123": để người xem thấy chỉ số được tính từ bộ đếm nào.
+std::string
+Ratio(uint64_t a, uint64_t b)
+{
+    std::ostringstream os;
+    os << a << "/" << b;
+    if (b > 0)
+    {
+        os << " = " << std::fixed << std::setprecision(3) << double(a) / b;
+    }
+    return os.str();
+}
+
+// Một dòng log "Số đo": bộ đếm tới thời điểm này và chỉ số tính từ chúng, cùng công thức với
+// CSV (dòng cuối lượt chạy phải khớp CSV; check_ns3.py nhóm 8 kiểm tra PDR).
+void
+VizMetricsLine()
+{
+    uint64_t sent = 0;
+    for (uint32_t i = 1; i <= g_nRobots; ++i)
+    {
+        sent += g_seq[i];
+    }
+    double hopSum = 0;
+    for (uint32_t h : g_hops)
+    {
+        hopSum += h;
+    }
+    std::ostringstream line;
+    // FlowMonitor coi gói nằm ở một chặng quá MaxPerHopDelay (mặc định 10 s) là mất, dù AODV giữ
+    // gói chờ đường tới 30 s; gói đó vẫn tới socket Gateway nhưng không được tính vào PDR.
+    uint64_t flowRx = FlowMonitorDataRx();
+    line << SecondsLabel(Simulator::Now().GetSeconds()) << "  PDR = nhận/gửi = " << Ratio(flowRx, sent)
+         << " (FlowMonitor, như CSV; socket Gateway nhận " << g_rxUnique << " gói, "
+         << (g_rxUnique > flowRx ? g_rxUnique - flowRx : 0) << " gói tới muộn FlowMonitor không tính, "
+         << g_delaysMs.size() - g_rxUnique << " bản trùng)"
+         << " | không có đường " << Ratio(g_dataNoRouteDrops, sent)
+         << " | chuyển tiếp bởi robot pin < 30 % " << Ratio(g_weakForwards, g_dataForwards)
+         << " | overhead = gói AODV/gói IP = " << Ratio(g_aodvTx, g_ipTx);
+    if (g_dataTxWindow > 0)
+    {
+        line << " | PDR cửa sổ " << g_windowStart << "–" << g_windowEnd << " s = "
+             << Ratio(g_dataRxWindow, g_dataTxWindow);
+    }
+    if (g_config == SimConfig::kCloudAssisted)
+    {
+        line << " | Cloud " << g_cloudBytes << " B";
+    }
+    if (!g_hops.empty())
+    {
+        line << " | số chặng TB " << std::fixed << std::setprecision(2) << hopSum / g_hops.size();
+    }
+    g_viz->metricsLog->Write(line.str() + "\n");
+}
+
+void
+VizMetrics()
+{
+    VizMetricsLine();
+    Simulator::Schedule(Seconds(60), &VizMetrics);
+}
+
 // Đặt tên/màu ban đầu ở t = 0, sau khi Orchestrator dựng xong cảnh.
 void
 VizStart()
 {
+    g_viz->setupLog->Write(g_viz->setup);
     g_viz->node[0]->SetName("Gateway L1");
     g_viz->node[0]->SetBaseColor(LevelColor(1));
     if (g_viz->cloudConfig)
@@ -792,10 +879,12 @@ SetupViz(const std::string& path,
          double duration,
          bool gatewayLevels,
          bool environment,
-         bool cloud)
+         bool cloud,
+         const std::string& setup)
 {
     g_viz = std::make_unique<Viz>();
     Viz& v = *g_viz;
+    v.setup = setup;
     v.orchestrator = CreateObject<netsimulyzer::Orchestrator>(path);
     v.orchestrator->SetAttribute("MobilityPollInterval", TimeValue(MilliSeconds(500)));
     std::ostringstream gatewayIp;
@@ -869,6 +958,10 @@ SetupViz(const std::string& path,
     v.gatewayLog->SetAttribute("Name", StringValue("Gateway"));
     v.routeLog = CreateObject<netsimulyzer::LogStream>(v.orchestrator);
     v.routeLog->SetAttribute("Name", StringValue("Định tuyến AODV"));
+    v.setupLog = CreateObject<netsimulyzer::LogStream>(v.orchestrator);
+    v.setupLog->SetAttribute("Name", StringValue("Thiết lập"));
+    v.metricsLog = CreateObject<netsimulyzer::LogStream>(v.orchestrator);
+    v.metricsLog->SetAttribute("Name", StringValue("Số đo"));
     if (gatewayLevels)
     {
         v.level = VizSeries("Mức hạ cấp Gateway",
@@ -919,6 +1012,9 @@ SetupViz(const std::string& path,
     Simulator::Schedule(Seconds(0), &VizStart);
     Simulator::Schedule(Seconds(1), &VizRoutes);
     Simulator::Schedule(Seconds(2 * kVizPdrBucketS), &VizPdr);
+    Simulator::Schedule(Seconds(60), &VizMetrics);
+    // Dòng cuối ngay trước khi dừng (sự kiện đúng lúc Stop không chạy): số của cả lượt chạy.
+    Simulator::Schedule(Seconds(duration) - MilliSeconds(1), &VizMetricsLine);
 }
 
 #else
@@ -954,7 +1050,7 @@ VizOnCloudFailure(double, uint32_t)
 }
 
 void
-SetupViz(const std::string&, const std::string&, double, bool, bool, bool)
+SetupViz(const std::string&, const std::string&, double, bool, bool, bool, const std::string&)
 {
     NS_ABORT_MSG("--netsimulyzer needs the NetSimulyzer module in ns-3 contrib/netsimulyzer "
                  "(simulation/vm/setup-ubuntu.sh --netsimulyzer)");
@@ -1026,6 +1122,20 @@ OnGatewayRecv(Ptr<Socket> socket)
         uint8_t buf[24];
         packet->CopyData(buf, 24);
         uint32_t robot = GetU32(buf);
+        uint32_t seq = GetU32(buf + 4);
+        if (robot < g_rxSeen.size())
+        {
+            std::vector<bool>& seen = g_rxSeen[robot];
+            if (seq >= seen.size())
+            {
+                seen.resize(seq + 1, false);
+            }
+            if (!seen[seq])
+            {
+                seen[seq] = true;
+                ++g_rxUnique;
+            }
+        }
         int64_t txNs = int64_t(uint64_t(GetU32(buf + 8)) | uint64_t(GetU32(buf + 12)) << 32);
         double energy = int32_t(GetU32(buf + 16)) / 1000.0;
         double rssi = int32_t(GetU32(buf + 20)) / 100.0;
@@ -1481,6 +1591,7 @@ main(int argc, char* argv[])
     g_rssi.resize(nodes + 1);
     g_energyPct.assign(nodes + 1, 100.0);
     g_seq.assign(nodes + 1, 0);
+    g_rxSeen.assign(nodes + 1, {});
     g_robotSockets.resize(nodes + 1);
     for (uint32_t i = 0; i <= nodes; ++i)
     {
@@ -1552,18 +1663,74 @@ main(int argc, char* argv[])
         g_animLastPos.assign(nodes + 1, Vector());
         RecordAnimPositions();
     }
+    // Thiết lập của lượt chạy: in ra terminal trước khi chạy và ghi vào log "Thiết lập" của cảnh 3D.
+    bool isCloud = g_config == SimConfig::kCloudAssisted;
+    bool hasGateway = isCloud || g_config == SimConfig::kGatewayHeuristic;
+    double linkRangeM =
+        refDist * std::pow(10.0,
+                           (txPowerDbm + txGainDbi + rxGainDbi - rxSensDbm - refLossDb) /
+                               (10 * pathLossExp));
+    std::ostringstream setup;
+    setup << "Cấu hình " << config << ", kịch bản " << scenario << ", seed " << seed << ", " << nodes
+          << " robot, " << Num(duration) << " s mô phỏng\n"
+          << "Nhà kính: Gateway tại (" << Num(gatewayXy.first) << "; " << Num(gatewayXy.second)
+          << "), quỹ đạo " << waypointsPath << "\n"
+          << "Kênh log-distance: n = " << Num(pathLossExp) << ", sigma = " << Num(sigmaDb)
+          << " dB, PL(" << Num(refDist) << " m) = " << Num(refLossDb) << " dB\n"
+          << "Radio 802.11b 1 Mbit/s: phát " << Num(txPowerDbm) << " dBm, anten " << Num(txGainDbi)
+          << " + " << Num(rxGainDbi) << " dBi, ngưỡng thu " << Num(rxSensDbm)
+          << " dBm, tầm danh định " << Num(linkRangeM, 4) << " m\n"
+          << "Lưu lượng: mỗi robot 1 gói UDP " << kPayloadBytes << " B mỗi "
+          << Num(g_interval.GetSeconds()) << " s, từ giây " << Num(g_appStart.GetSeconds())
+          << " tới " << Num(g_appStop.GetSeconds()) << "\n"
+          << "Pin: ban đầu U(20; 100) %, hao " << Num(g_drainMovePctPerS) << " %/s khi di chuyển, "
+          << Num(g_drainTxPct) << " % mỗi gói IP\n";
+    if (g_config == SimConfig::kNoCloud)
+    {
+        setup << "Định tuyến: AODV gốc (jitter U(0; 10) ms khi phát lại RREQ)";
+    }
+    else
+    {
+        setup << "Định tuyến: AODV + delayed RREQ, D_max = " << Num(dmaxMs) << " ms, J = "
+              << Num(jitterMs) << " ms, trọng số ban đầu wh/wr/we = " << Num(g_activeWeights.hop)
+              << "/" << Num(g_activeWeights.rssi) << "/" << Num(g_activeWeights.energy);
+    }
+    setup << (destinationOnly ? ", chỉ Gateway trả lời RREQ\n" : "\n");
+    if (hasGateway)
+    {
+        setup << "Điều khiển: heuristic chạy tại " << (isCloud ? "Cloud" : "Gateway") << " mỗi T = "
+              << Num(period) << " s";
+        if (isCloud)
+        {
+            setup << ", RTT " << Num(g_wanConstantRttMs) << " ms, timeout " << Num(cloudTimeout)
+                  << " s, TTL " << Num(ttl) << " s";
+            if (g_outageStart >= 0)
+            {
+                setup << ", mất Cloud " << Num(g_outageStart) << "–" << Num(g_outageEnd) << " s";
+            }
+        }
+        setup << "\n";
+    }
+    if (!outPath.empty())
+    {
+        std::cout << setup.str() << std::flush; // không in khi CSV ra stdout
+    }
+
     if (!netsimulyzerPath.empty())
     {
         SetupViz(netsimulyzerPath,
                  ReadFile(layoutPath),
                  duration,
-                 g_config == SimConfig::kGatewayHeuristic || g_config == SimConfig::kCloudAssisted,
+                 hasGateway,
                  netsimulyzerEnv,
-                 g_config == SimConfig::kCloudAssisted);
+                 isCloud,
+                 setup.str());
     }
 
     FlowMonitorHelper flowHelper;
     Ptr<FlowMonitor> monitor = flowHelper.InstallAll();
+    g_monitor = monitor;
+    g_classifier = DynamicCast<Ipv4FlowClassifier>(flowHelper.GetClassifier());
 
     Simulator::Stop(Seconds(duration));
     Simulator::Run();

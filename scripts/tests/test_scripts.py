@@ -53,6 +53,23 @@ def test_welch_equal_variance_reduces_to_student() -> None:
     assert caar_stats.welch_t_test(b, a).t == pytest.approx(-r.t)
 
 
+def test_paired_t_test() -> None:
+    # Hiệu 1, 2, 3, 4, 5: mean 3, sd sqrt(2.5) -> t = 3 / (sqrt(2.5) / sqrt(5)) = 4.2426, df 4.
+    a = [2.0, 4.0, 6.0, 8.0, 10.0]
+    b = [1.0, 2.0, 3.0, 4.0, 5.0]
+    r = caar_stats.paired_t_test(a, b)
+    assert r.t == pytest.approx(3 / math.sqrt(0.5))
+    assert r.df == 4
+    assert r.p == pytest.approx(caar_stats.t_sf_two_sided(r.t, 4))
+    # Cùng một độ lệch cho mọi seed: ghép cặp thấy rõ, Welch thì không.
+    base = [0.4, 0.6, 0.5, 0.7, 0.45]
+    shifted = [x + 0.01 for x in base]
+    assert caar_stats.paired_t_test(shifted, base).p < 1e-6
+    assert caar_stats.welch_t_test(shifted, base).p > 0.5
+    with pytest.raises(ValueError):
+        caar_stats.paired_t_test([1.0, 2.0], [1.0])
+
+
 def test_significance_rule() -> None:
     assert caar_stats.significantly_different([0.9] * 5 + [0.91] * 5, [0.7] * 5 + [0.71] * 5)
     assert not caar_stats.significantly_different([0.8, 0.9, 0.85, 0.82], [0.81, 0.88, 0.86, 0.83])

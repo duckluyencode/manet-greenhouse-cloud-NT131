@@ -48,7 +48,7 @@ robot. Mất cloud thì Gateway dùng trọng số cache, quá TTL thì về b�
 |---|---|---|
 | Q1 | Metric đa tiêu chí (`local_optimized`) cho PDR cao hơn AODV gốc (`no_cloud`) | Bác bỏ (p = 0,87) |
 | Q2a | Dữ liệu toàn mạng (`gateway_heuristic`) cho PDR cao hơn trọng số cố định | Bác bỏ (p = 0,98) |
-| Q2b | Đặt heuristic trên Cloud hay Gateway không khác nhau | Xác nhận (p = 0,99) |
+| Q2b | Đặt heuristic trên Cloud hay Gateway không khác nhau | Không phát hiện khác biệt (p = 0,99) |
 | Q3 | Mất cloud, PDR không thấp hơn `no_cloud` | Xác nhận |
 
 Mạng thưa (6 robot/ha) mất gói chủ yếu vì không có đường về Gateway; mạng dày (16–20 robot/ha)

@@ -25,7 +25,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from caar_stats import significantly_different, summarize, welch_t_test  # noqa: E402
+from caar_stats import paired_t_test, significantly_different, summarize, welch_t_test  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -72,15 +72,23 @@ def load_runs(db_path: Path) -> list[dict]:
     return runs
 
 
+def _field(r: dict, key: str):
+    """Cột của run, hoặc 'p_<khóa>' để lấy từ params."""
+    return r["params"].get(key[2:]) if key.startswith("p_") else r[key]
+
+
 def values(runs: list[dict], metric: str, **where) -> list[float]:
     out = []
     for r in runs:
-        matches = all(
-            (r["params"].get(k[2:]) if k.startswith("p_") else r[k]) == v for k, v in where.items()
-        )
-        if matches and r[metric] is not None:
-            out.append(float(r[metric]))
+        if all(_field(r, k) == v for k, v in where.items()) and _field(r, metric) is not None:
+            out.append(float(_field(r, metric)))
     return out
+
+
+def by_seed(runs: list[dict], metric: str, **where) -> dict[int, float]:
+    """Như values() nhưng giữ seed, để ghép cặp hai cấu hình chạy cùng seed."""
+    return {int(r["seed"]): float(_field(r, metric)) for r in runs
+            if all(_field(r, k) == v for k, v in where.items()) and _field(r, metric) is not None}
 
 
 def style_axes(ax, title: str, ylabel: str) -> None:
@@ -216,10 +224,15 @@ def loss_breakdown_chart(runs, groups, title, out: Path) -> bool:
     return True
 
 
-def verdict_line(qid, claim, a_name, a, b_name, b, expect) -> str:
-    """expect: 'greater' (a > b có ý nghĩa), 'not_lower' (a không thấp hơn b), 'same'."""
+def verdict_line(qid, claim, a_name, a_seeds: dict, b_name, b_seeds: dict, expect) -> str:
+    """expect: 'greater' (a > b có ý nghĩa), 'not_lower' (a không thấp hơn b), 'same'.
+
+    Kết luận theo tiêu chí mục 10.4 (CI hoặc Welch); p ghép cặp theo seed in kèm để đối chiếu.
+    'same' chỉ kết luận được là không phát hiện khác biệt: kiểm định không chứng minh tương đương.
+    """
+    a, b = list(a_seeds.values()), list(b_seeds.values())
     if not a or not b:
-        return f"| {qid} | {claim} | thiếu dữ liệu | | | |"
+        return f"| {qid} | {claim} | thiếu dữ liệu | | | | |"
     sa, sb = summarize(a), summarize(b)
     w = welch_t_test(a, b) if sa.n > 1 and sb.n > 1 else None
     diff = significantly_different(a, b) if w else False
@@ -230,21 +243,20 @@ def verdict_line(qid, claim, a_name, a, b_name, b, expect) -> str:
     else:
         ok = not diff
     p = f"{w.p:.3g}" if w else "—"
+    yes = "Không phát hiện khác biệt" if expect == "same" else "Xác nhận"
     return (
         f"| {qid} | {claim} | {a_name}: {sa.mean:.4f} ± {sa.ci_half:.4f} (n={sa.n}) | "
-        f"{b_name}: {sb.mean:.4f} ± {sb.ci_half:.4f} (n={sb.n}) | {p} | "
-        f"{'Xác nhận' if ok else 'Bác bỏ'} |"
+        f"{b_name}: {sb.mean:.4f} ± {sb.ci_half:.4f} (n={sb.n}) | {p} | {_paired_p(a_seeds, b_seeds)} | "
+        f"{yes if ok else 'Bác bỏ'} |"
     )
 
 
 def hypotheses(runs) -> str:
     def pdr(scenario, config):
-        return values(runs, "pdr", scenario=scenario, config_type=config)
+        return by_seed(runs, "pdr", scenario=scenario, config_type=config)
 
     def pdr_window(scenario, config):
-        return [float(r["params"]["pdr_window"]) for r in runs
-                if r["scenario"] == scenario and r["config_type"] == config
-                and r["params"].get("pdr_window") is not None]
+        return by_seed(runs, "p_pdr_window", scenario=scenario, config_type=config)
 
     # Q3 xét PDR trong khoảng mất cloud; caar.cc ghi số này vào params.pdr_window.
     if pdr_window("outage", "cloud_assisted") and pdr_window("baseline", "no_cloud"):
@@ -258,9 +270,11 @@ def hypotheses(runs) -> str:
         "# Kiểm chứng giả thuyết (mục 10.5)",
         "",
         "Khác nhau có ý nghĩa: CI 95% không chồng nhau hoặc Welch t-test p < 0,05 (mục 10.4).",
+        "Ghép cặp p: t-test trên hiệu từng seed (hai cấu hình chạy cùng quỹ đạo và pin ban đầu); in để",
+        "đối chiếu, không đổi tiêu chí kết luận. Q2b không bác bỏ chỉ có nghĩa là không phát hiện khác biệt.",
         "",
-        "| Câu | Giả thuyết | A | B | Welch p | Kết luận |",
-        "|---|---|---|---|---|---|",
+        "| Câu | Giả thuyết | A | B | Welch p | Ghép cặp p | Kết luận |",
+        "|---|---|---|---|---|---|---|",
         verdict_line("Q1", "PDR local_optimized > no_cloud", "local_optimized",
                      pdr("baseline", "local_optimized"), "no_cloud", pdr("baseline", "no_cloud"), "greater"),
         verdict_line("Q2a", "PDR gateway_heuristic > local_optimized", "gateway_heuristic",
@@ -321,11 +335,21 @@ def _cell(vals: list[float], fmt: str = ".3f") -> str:
     return f"{s.mean:{fmt}}{ci}"
 
 
+def _fmt_p(p: float) -> str:
+    return "< 0.001" if p < 0.001 else f"{p:.3f}"
+
+
 def _p(a: list[float], b: list[float]) -> str:
     if len(a) < 2 or len(b) < 2:
         return "—"
-    p = welch_t_test(a, b).p
-    return "< 0.001" if p < 0.001 else f"{p:.3f}"
+    return _fmt_p(welch_t_test(a, b).p)
+
+
+def _paired_p(a: dict[int, float], b: dict[int, float]) -> str:
+    seeds = sorted(set(a) & set(b))
+    if len(seeds) < 2:
+        return "—"
+    return _fmt_p(paired_t_test([a[s] for s in seeds], [b[s] for s in seeds]).p)
 
 
 def mechanism_section(runs) -> list[str]:
@@ -351,14 +375,19 @@ def mechanism_section(runs) -> list[str]:
             "",
             "## S3 — lợi ích của metric theo mật độ robot",
             "",
-            "| Robot / 1 ha | PDR no_cloud | PDR local_optimized | Welch p | Mất do không có đường (no_cloud) |",
-            "|---|---|---|---|---|",
+            "Welch p và ghép cặp p: so với no_cloud cùng số robot (LO: local_optimized, GH: gateway_heuristic).",
+            "",
+            "| Robot / 1 ha | PDR no_cloud | PDR local_optimized | Welch p (LO) | Ghép cặp p (LO) "
+            "| PDR gateway_heuristic | Ghép cặp p (GH) | Mất do không có đường (no_cloud) |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         for n in scale_ns:
-            a = values(runs, "pdr", scenario="scale", config_type="no_cloud", node_count=n)
-            b = values(runs, "pdr", scenario="scale", config_type="local_optimized", node_count=n)
+            a, b, g = (by_seed(runs, "pdr", scenario="scale", config_type=c, node_count=n)
+                       for c in ("no_cloud", "local_optimized", "gateway_heuristic"))
             nr = values(runs, "loss_no_route_ratio", scenario="scale", config_type="no_cloud", node_count=n)
-            out.append(f"| {n} | {_cell(a)} | {_cell(b)} | {_p(b, a)} | {_cell(nr)} |")
+            a_v, b_v, g_v = list(a.values()), list(b.values()), list(g.values())
+            out.append(f"| {n} | {_cell(a_v)} | {_cell(b_v)} | {_p(b_v, a_v)} | {_paired_p(b, a)} "
+                       f"| {_cell(g_v)} | {_paired_p(g, a)} | {_cell(nr)} |")
 
     diag_ns = sorted({r["node_count"] for r in runs if r["scenario"] == "destonly"})
     if diag_ns:

@@ -1,13 +1,15 @@
 # Kiểm chứng giả thuyết (mục 10.5)
 
 Khác nhau có ý nghĩa: CI 95% không chồng nhau hoặc Welch t-test p < 0,05 (mục 10.4).
+Ghép cặp p: t-test trên hiệu từng seed (hai cấu hình chạy cùng quỹ đạo và pin ban đầu); in để
+đối chiếu, không đổi tiêu chí kết luận. Q2b không bác bỏ chỉ có nghĩa là không phát hiện khác biệt.
 
-| Câu | Giả thuyết | A | B | Welch p | Kết luận |
-|---|---|---|---|---|---|
-| Q1 | PDR local_optimized > no_cloud | local_optimized: 0.5226 ± 0.0418 (n=10) | no_cloud: 0.5181 ± 0.0425 (n=10) | 0.867 | Bác bỏ |
-| Q2a | PDR gateway_heuristic > local_optimized | gateway_heuristic: 0.5234 ± 0.0371 (n=10) | local_optimized: 0.5226 ± 0.0418 (n=10) | 0.975 | Bác bỏ |
-| Q2b | cloud_assisted ≈ gateway_heuristic | cloud_assisted: 0.5236 ± 0.0374 (n=10) | gateway_heuristic: 0.5234 ± 0.0371 (n=10) | 0.991 | Xác nhận |
-| Q3 | Mất cloud: pdr_window cloud_assisted (S2a) không thấp hơn no_cloud (S1) | cloud_assisted S2a: 0.5914 ± 0.0944 (n=10) | no_cloud S1: 0.5482 ± 0.1133 (n=10) | 0.516 | Xác nhận |
+| Câu | Giả thuyết | A | B | Welch p | Ghép cặp p | Kết luận |
+|---|---|---|---|---|---|---|
+| Q1 | PDR local_optimized > no_cloud | local_optimized: 0.5226 ± 0.0418 (n=10) | no_cloud: 0.5181 ± 0.0425 (n=10) | 0.867 | 0.802 | Bác bỏ |
+| Q2a | PDR gateway_heuristic > local_optimized | gateway_heuristic: 0.5234 ± 0.0371 (n=10) | local_optimized: 0.5226 ± 0.0418 (n=10) | 0.975 | 0.925 | Bác bỏ |
+| Q2b | cloud_assisted ≈ gateway_heuristic | cloud_assisted: 0.5236 ± 0.0374 (n=10) | gateway_heuristic: 0.5234 ± 0.0371 (n=10) | 0.991 | 0.343 | Không phát hiện khác biệt |
+| Q3 | Mất cloud: pdr_window cloud_assisted (S2a) không thấp hơn no_cloud (S1) | cloud_assisted S2a: 0.5914 ± 0.0944 (n=10) | no_cloud S1: 0.5482 ± 0.1133 (n=10) | 0.516 | 0.017 | Xác nhận |
 
 Ghi chú: Q3 so sánh PDR của các gói gửi trong cửa sổ mất cloud (params.window_s).
 Mọi kết quả, kể cả bác bỏ giả thuyết, được báo cáo trung thực.
@@ -23,12 +25,14 @@ Mọi kết quả, kể cả bác bỏ giả thuyết, được báo cáo trung 
 
 ## S3 — lợi ích của metric theo mật độ robot
 
-| Robot / 1 ha | PDR no_cloud | PDR local_optimized | Welch p | Mất do không có đường (no_cloud) |
-|---|---|---|---|---|
-| 6 | 0.392 ± 0.065 | 0.382 ± 0.073 | 0.822 | 0.418 ± 0.078 |
-| 10 | 0.518 ± 0.042 | 0.523 ± 0.042 | 0.867 | 0.165 ± 0.035 |
-| 16 | 0.501 ± 0.059 | 0.525 ± 0.045 | 0.477 | 0.035 ± 0.009 |
-| 20 | 0.483 ± 0.042 | 0.519 ± 0.029 | 0.125 | 0.020 ± 0.006 |
+Welch p và ghép cặp p: so với no_cloud cùng số robot (LO: local_optimized, GH: gateway_heuristic).
+
+| Robot / 1 ha | PDR no_cloud | PDR local_optimized | Welch p (LO) | Ghép cặp p (LO) | PDR gateway_heuristic | Ghép cặp p (GH) | Mất do không có đường (no_cloud) |
+|---|---|---|---|---|---|---|---|
+| 6 | 0.392 ± 0.065 | 0.382 ± 0.073 | 0.822 | 0.178 | 0.391 ± 0.067 | 0.982 | 0.418 ± 0.078 |
+| 10 | 0.518 ± 0.042 | 0.523 ± 0.042 | 0.867 | 0.802 | 0.523 ± 0.037 | 0.671 | 0.165 ± 0.035 |
+| 16 | 0.501 ± 0.059 | 0.525 ± 0.045 | 0.477 | 0.061 | 0.505 ± 0.047 | 0.795 | 0.035 ± 0.009 |
+| 20 | 0.483 ± 0.042 | 0.519 ± 0.029 | 0.125 | 0.003 | 0.539 ± 0.048 | 0.007 | 0.020 ± 0.006 |
 
 ## Chẩn đoán Q1 — chỉ Gateway trả lời RREQ (AODV DestinationOnly)
 

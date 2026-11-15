@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Cảnh 3D và phân tích (chuẩn bị bảo vệ)
+- Cảnh 3D có thêm luồng log `Thiết lập` (tham số lượt chạy, cũng in ra terminal) và `Số đo` (bộ đếm
+  và chỉ số mỗi 60 s và cuối lượt chạy; dòng cuối khớp CSV, `check_ns3.py` nhóm 8 kiểm tra)
+- `demo.sh` nhận tham số `caar` thêm sau số robot, ví dụ `--ttl=15`, để đổi thông số và chạy lại
+- `hypotheses.md`: thêm p ghép cặp theo seed (`caar_stats.paired_t_test`) cho Q1–Q3 và S3; Q2b ghi
+  "Không phát hiện khác biệt" thay cho "Xác nhận"
+- `NetworkSnapshot.run_id` giới hạn trong số nguyên 64 bit không âm: ngoài miền trả 422 thay vì 500
+
 ### Cloud service
 - `POST /optimize` nhận `NetworkSnapshot`, chọn trọng số bằng heuristic toàn mạng (mục 7.2,
   `app/heuristic.py`); so sánh ngưỡng trong miền số nguyên/dBm để khớp tuyệt đối với bản C++
