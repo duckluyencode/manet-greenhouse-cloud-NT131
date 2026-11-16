@@ -2,6 +2,7 @@
 Thống kê cho mục 10.4, không cần scipy:
 - khoảng tin cậy 95%: x̄ ± t_{0.975, n-1} · s / √n
 - Welch t-test hai phía.
+- t-test ghép cặp theo seed (phân tích bổ sung: các cấu hình dùng chung seed).
 
 Phân phối Student t tính qua hàm beta không đầy đủ chính quy hóa
 (liên phân số Lentz, Numerical Recipes §6.4).
@@ -114,6 +115,18 @@ def welch_t_test(a: list[float], b: list[float]) -> WelchResult:
         return WelchResult(0.0 if same else math.inf, float(sa.n + sb.n - 2), 1.0 if same else 0.0)
     t = (sa.mean - sb.mean) / math.sqrt(va + vb)
     df = (va + vb) ** 2 / (va**2 / (sa.n - 1) + vb**2 / (sb.n - 1))
+    return WelchResult(t, df, t_sf_two_sided(t, df))
+
+
+def paired_t_test(a: list[float], b: list[float]) -> WelchResult:
+    """t-test ghép cặp hai phía trên hiệu a_i - b_i (cùng seed = cùng quỹ đạo, cùng pin ban đầu)."""
+    if len(a) != len(b) or len(a) < 2:
+        raise ValueError("paired test needs two lists of the same length >= 2")
+    d = summarize([x - y for x, y in zip(a, b)])
+    df = float(d.n - 1)
+    if d.sd == 0:
+        return WelchResult(0.0 if d.mean == 0 else math.inf, df, 1.0 if d.mean == 0 else 0.0)
+    t = d.mean / (d.sd / math.sqrt(d.n))
     return WelchResult(t, df, t_sf_two_sided(t, df))
 
 

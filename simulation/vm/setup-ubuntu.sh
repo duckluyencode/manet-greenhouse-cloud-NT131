@@ -2,12 +2,15 @@
 # Cài CAAR trên Ubuntu 24.04 (máy thật hoặc máy ảo có giao diện), không dùng Docker:
 #   1. gói hệ thống (g++, CMake, Qt5...)
 #   2. ns-3.48 vào ~/ns-3-dev
-#   3. patch AODV delayed RREQ + kịch bản scratch/caar (simulation/install.sh)
+#   3. patch AODV delayed RREQ + kịch bản scratch/caar (simulation/install.sh),
+#      module NetSimulyzer 1.0.17 vào contrib/netsimulyzer (cảnh 3D, caar --netsimulyzer)
 #   4. build ns-3 (profile release)
 #   5. trình xem NetAnim 3.109 vào ~/netanim, kèm netanim-wpr.patch để vẽ được gói wifi
+# Trình xem 3D NetSimulyzer là ứng dụng riêng: simulation/README.md mục "Xem 3D".
 #
 # Chạy từ thư mục repo:   bash simulation/vm/setup-ubuntu.sh
 # Đổi nơi cài:            NS3_DIR=~/ns3 NETANIM_DIR=~/na bash simulation/vm/setup-ubuntu.sh
+# Không cài module 3D:    NETSIMULYZER=0 bash simulation/vm/setup-ubuntu.sh
 # Chạy lại an toàn: bước nào đã xong thì bỏ qua.
 set -euo pipefail
 
@@ -16,7 +19,9 @@ NS3_DIR="${NS3_DIR:-$HOME/ns-3-dev}"
 NETANIM_DIR="${NETANIM_DIR:-$HOME/netanim}"
 NS3_TAG=ns-3.48
 NETANIM_TAG=netanim-3.109
+NETSIMULYZER_TAG=v1.0.17
 MODULES="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim"
+[[ "${NETSIMULYZER:-1}" == 1 ]] && MODULES+=";netsimulyzer"
 SUDO=""
 [[ "$(id -u)" -ne 0 ]] && SUDO=sudo
 
@@ -48,8 +53,16 @@ else
   git clone --depth 1 --branch "$NS3_TAG" https://gitlab.com/nsnam/ns-3-dev.git "$NS3_DIR"
 fi
 
-step "3/5 Áp patch CAAR và chép kịch bản scratch/caar"
+step "3/5 Áp patch CAAR, chép kịch bản scratch/caar, thêm module NetSimulyzer"
 bash "$REPO/simulation/install.sh" "$NS3_DIR"
+if [[ "$MODULES" == *netsimulyzer* ]]; then
+  if [[ -d "$NS3_DIR/contrib/netsimulyzer" ]]; then
+    echo "module NetSimulyzer đã có"
+  else
+    git clone --depth 1 --branch "$NETSIMULYZER_TAG" \
+      https://github.com/usnistgov/NetSimulyzer-ns3-module.git "$NS3_DIR/contrib/netsimulyzer"
+  fi
+fi
 
 step "4/5 Build ns-3 (lần đầu mất 20–60 phút tùy máy)"
 cd "$NS3_DIR"
@@ -75,3 +88,5 @@ step "Xong"
 echo "ns-3:    $NS3_DIR   (thử: cd $NS3_DIR && ./ns3 run \"caar --help\")"
 echo "NetAnim: $NETANIM_DIR/NetAnim"
 echo "Chạy mô phỏng và xem bằng NetAnim:  bash simulation/vm/demo.sh"
+[[ "$MODULES" == *netsimulyzer* ]] && echo "demo.sh ghi thêm cảnh 3D (.json) để mở bằng trình xem NetSimulyzer"
+true

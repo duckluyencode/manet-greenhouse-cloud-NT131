@@ -21,7 +21,8 @@ class NodeTelemetry(BaseModel):
 class NetworkSnapshot(BaseModel):
     """Trạng thái toàn mạng Gateway gửi lên /optimize mỗi chu kỳ T."""
 
-    run_id: int
+    # Lưu vào cột INTEGER 64 bit của SQLite (cloud_events.run_id); ngoài miền thì 422 thay vì 500.
+    run_id: int = Field(ge=0, le=2**63 - 1)
     # Unix time lúc Gateway tạo snapshot; lệch quá 30 s bị từ chối (security.py).
     timestamp: float = Field(allow_inf_nan=False)
     # Tùy chọn: nếu có, mỗi nonce chỉ được dùng một lần.

@@ -9,6 +9,10 @@
 #       --out=/repo/results/raw/no_cloud_baseline_1.csv"
 # Chạy hàng loạt:
 #   docker run --rm -v "$PWD:/repo" -e NS3_DIR=/opt/ns-3-dev caar-ns3 /repo/scripts/run_batch.sh s1
+# Demo kèm cảnh 3D (ghi results/demo/<tên>.json, mở bằng NetSimulyzer trên máy thật):
+#   docker run --rm -v "$PWD:/repo" -e NS3_DIR=/opt/ns-3-dev caar-ns3 \
+#     bash /repo/simulation/vm/demo.sh cloud_assisted outage 1 10
+# Không cần cảnh 3D: docker build --build-arg NETSIMULYZER=0 ...
 
 # --- base: ns-3.48 gốc, chỉ các module CAAR cần ---------------------------------
 FROM ubuntu:24.04 AS base
@@ -19,8 +23,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ARG NS3_TAG=ns-3.48
+ARG NETSIMULYZER=1
 WORKDIR /opt
-RUN git clone --depth 1 --branch ${NS3_TAG} https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
+RUN git clone --depth 1 --branch ${NS3_TAG} https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev \
+    && if [ "$NETSIMULYZER" = 1 ]; then \
+         git clone --depth 1 --branch v1.0.17 https://github.com/usnistgov/NetSimulyzer-ns3-module.git \
+           ns-3-dev/contrib/netsimulyzer; \
+       fi
 
 # Profile release = optimized nhưng không có -march=native: file chạy dùng được trên mọi CPU
 # x86-64 và cùng seed cho cùng kết quả trên mọi máy.
@@ -28,8 +37,9 @@ RUN git clone --depth 1 --branch ${NS3_TAG} https://gitlab.com/nsnam/ns-3-dev.gi
 ARG JOBS=4
 ENV JOBS=${JOBS}
 WORKDIR /opt/ns-3-dev
-RUN ./ns3 configure --build-profile=release --disable-examples --disable-tests \
-        --enable-modules="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim" \
+RUN MODULES="aodv;wifi;mobility;internet;applications;flow-monitor;propagation;netanim" \
+    && if [ "$NETSIMULYZER" = 1 ]; then MODULES="$MODULES;netsimulyzer"; fi \
+    && ./ns3 configure --build-profile=release --disable-examples --disable-tests --enable-modules="$MODULES" \
     && ./ns3 build -j ${JOBS}
 
 # --- caar: áp patch delayed RREQ + kịch bản scratch/caar --------------------------

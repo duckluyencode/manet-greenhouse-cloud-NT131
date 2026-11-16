@@ -1,0 +1,20 @@
+# CAAR greenhouse, scripts/gen_greenhouse_models.py
+newmtl steel
+Ns 60
+Ka 1 1 1
+Kd 0.550 0.570 0.600
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2
+
+newmtl steel_light
+Ns 60
+Ka 1 1 1
+Kd 0.780 0.800 0.820
+Ks 0.2 0.2 0.2
+Ke 0 0 0
+Ni 1.45
+d 1.00
+illum 2

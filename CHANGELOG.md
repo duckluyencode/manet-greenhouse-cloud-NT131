@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Cảnh 3D và phân tích (chuẩn bị bảo vệ)
+- Cảnh 3D có thêm luồng log `Thiết lập` (tham số lượt chạy, cũng in ra terminal) và `Số đo` (bộ đếm
+  và chỉ số mỗi 60 s và cuối lượt chạy; dòng cuối khớp CSV, `check_ns3.py` nhóm 8 kiểm tra)
+- `demo.sh` nhận tham số `caar` thêm sau số robot, ví dụ `--ttl=15`, để đổi thông số và chạy lại
+- `hypotheses.md`: thêm p ghép cặp theo seed (`caar_stats.paired_t_test`) cho Q1–Q3 và S3; Q2b ghi
+  "Không phát hiện khác biệt" thay cho "Xác nhận"
+- `NetworkSnapshot.run_id` giới hạn trong số nguyên 64 bit không âm: ngoài miền trả 422 thay vì 500
+
 ### Cloud service
 - `POST /optimize` nhận `NetworkSnapshot`, chọn trọng số bằng heuristic toàn mạng (mục 7.2,
   `app/heuristic.py`); so sánh ngưỡng trong miền số nguyên/dBm để khớp tuyệt đối với bản C++
@@ -20,11 +28,19 @@
   quỹ đạo từ `contracts/waypoints`, máy trạng thái Gateway, kênh cloud RTT 40 ms, mất cloud,
   4 phép đo cơ chế (mất gói do không có đường, số hop, RSSI link, chuyển tiếp bởi robot yếu pin),
   `--destination-only`, xuất NetAnim (vị trí robot tự ghi mỗi giây cả lượt chạy)
+- Cảnh 3D NetSimulyzer 1.0.17 (`caar --netsimulyzer`, module `contrib/netsimulyzer`, tùy chọn): nhà
+  kính, đường AODV robot → hop kế tiếp, biểu đồ PDR / pin / mức Gateway, log Gateway; CSV giống hệt
+  lượt chạy không bật 3D (`check_ns3.py` nhóm 8)
+- Môi trường nhà kính 3D: khung thép Venlo, kính mái và vách, 110 hàng cà chua giữa các ray
+  (`scripts/gen_greenhouse_models.py` sinh OBJ từ `layout.json` vào `simulation/netsimulyzer/models/caar/`,
+  `caar --netsimulyzer-env`)
+- Kênh Cloud trong cảnh 3D (`cloud_assisted`): máy chủ Cloud nối với Gateway, màu đường nối theo mức
+  hạ cấp, vòng sáng mỗi lần gọi/trả lời `/optimize`, log `Cloud` và biểu đồ byte trao đổi với Cloud
 - `simulation/caar-logic/caar_logic.h`: heuristic, chi phí c_i, máy trạng thái Gateway; parity với
   bản Python qua `contracts/parity_cases.json`
 - Môi trường: nhà kính 1 ha, 112 hàng ray, radio WiFi 20 dBm + anten 3 dBi, ngưỡng −82 dBm (tầm ~29 m)
 - Cài đặt: `simulation/install.sh`, `simulation/Dockerfile`, `simulation/vm/` (Ubuntu 24.04 không Docker,
-  NetAnim 3.109 kèm `netanim-wpr.patch` để vẽ được gói wifi của ns-3)
+  NetAnim 3.109 kèm `netanim-wpr.patch` để vẽ được gói wifi của ns-3, module NetSimulyzer)
 
 ### Phân tích
 - `scripts/`: sinh quỹ đạo, kênh, test vector; `run_batch.sh` (S1, S2a, S2b, S3, sens, diag);
